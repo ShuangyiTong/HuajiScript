@@ -1,27 +1,15 @@
-#include "shell.hpp"
+#include "hjscript.hpp"
 
 int main(int argc, char * argv[])  {
-    
-    SHELL sh = SHELL();
 
     if(!argv[1]) {
-        std::cout<<"Expect 1 argument, [shell] or a huaji script file"<<std::endl;
-
+        HUAJISCRIPTBASE hjs = HUAJISCRIPTBASE();
+        hjs.Entry_Point();
         return 0;
     }
 
-    std::string option = argv[1];
-
-    if(option=="shell") {
-
-        sh.Commandline_Interface();
-
-        return 0;
-    }
-    else {
-        
-        sh.Script_Interface(option);
-
-        return 0;
-    }
+    std::string file_name = argv[1];
+    HUAJISCRIPTBASE hjs = HUAJISCRIPTBASE(file_name);
+    hjs.Entry_Point();
+    return 0;
 }

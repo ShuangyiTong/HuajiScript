@@ -8,6 +8,7 @@ using namespace hjbase_cnt::commands_names;
 using namespace hjbase_cnt::type_tag;
 using namespace hjbase_ufunc;
 using namespace hjbase_except;
+using namespace hjbase_class;
 
 
 void hjbase_ufunc::Print_Vector_String(const std::vector<std::string> *vector_string) {

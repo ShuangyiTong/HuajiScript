@@ -7,6 +7,7 @@
 #include <fstream>
 #include <cstdlib>
 #include <map>
+#include <queue>
 
 #include "config.hpp"
 
@@ -79,8 +80,8 @@ class HUAJITOKENIZER {
     private:
 
         std::istream *source;
-        std::string pre_read;
-        bool is_cin, is_in_quotation, is_in_block_comment, is_in_line_comment, is_in_nosubst;
+        std::queue<std::string> *token_queue;
+        bool is_cin, is_in_quotation, is_in_block_comment, is_in_line_comment, is_in_nosubst, is_in_square_bracket;
 };
 
 
@@ -106,6 +107,8 @@ class HUAJISCRIPTBASE {
         virtual std::string More_On_Expression_Level_1(const std::string &op, const std::vector<std::string> *vals);
 
         virtual std::string More_On_Names_Query_Level_1(const std::string &name);
+
+        virtual std::string More_On_Slice_Operator_Level_1(const std::vector<std::string> *vals);
 
         virtual void More_Cleanup_Level_1();
         

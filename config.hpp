@@ -16,15 +16,21 @@ namespace hjbase_cnt {
         const char cEXPR_START = '(';
         const std::string EXPR_END = ")";
         const char cEXPR_END = ')';
+        const std::string SQUARE_BRACKET_START = "[";
+        const char cSQUARE_BRACKET_START = '[';
+        const std::string SQUARE_BRACKET_END = "]";
+        const char cSQUARE_BRACKET_END = ']';
         const std::string DELIMITER = ";";
         const char cDELIMITER = ';';
         const std::string SEPARATOR = ",";
         const char cSEPARATOR = ',';
         const char QUOTATION_MARK = '"';
         const char NOSUBST = '@';
+        const std::string SLICER = ":";
+        const char cSLICER = ':';
+    }
 
-        const std::string NUMERICAL_OPERATORS = "+ -  * / %% <= >= < >";
-        const std::string OTHER_BASIC_OPERATORS = "& | ! != =";
+    namespace operators {
 
         const std::string OP_ADD = "+";
         const std::string OP_MINUS = "-";
@@ -36,11 +42,57 @@ namespace hjbase_cnt {
         const std::string OP_LT = "<";
         const std::string OP_GT = ">";
 
+        enum {
+            eOP_ADD,
+            eOP_MINUS,
+            eOP_MULTIPLY,
+            eOP_DIVISION,
+            eOP_MOD,
+            eOP_LE,
+            eOP_GE,
+            eOP_LT,
+            eOP_GT,
+        };
+
+        const std::map<std::string, int> NUMERICAL_OPERATORS = {
+            { OP_ADD, eOP_ADD },
+            { OP_MINUS, eOP_MINUS },
+            { OP_MULTIPLY, eOP_MULTIPLY },
+            { OP_DIVISION, eOP_DIVISION },
+            { OP_MOD, eOP_MOD },
+            { OP_LE, eOP_LE },
+            { OP_GE, eOP_GE },
+            { OP_LT, eOP_LT },
+            { OP_GT, eOP_GT },
+        };
+
         const std::string OP_AND = "&";
         const std::string OP_OR = "|";
         const std::string OP_NOT = "!";
         const std::string OP_NE = "!=";
         const std::string OP_EQ = "=";
+        const std::string OP_STRAPP = "strapp";
+        const std::string OP_SLICE = "slice";
+
+        enum {
+            eOP_AND,
+            eOP_OR,
+            eOP_NOT,
+            eOP_NE,
+            eOP_EQ,
+            eOP_STRAPP,
+            eOP_SLICE,
+        };
+
+        const std::map<std::string, int> OTHER_BASIC_OPERATORS = {
+            { OP_AND, eOP_AND },
+            { OP_OR, eOP_OR },
+            { OP_NOT, eOP_NOT },
+            { OP_NE, eOP_NE },
+            { OP_EQ, eOP_EQ },
+            { OP_STRAPP, eOP_STRAPP },
+            { OP_SLICE, eOP_SLICE },
+        };
     }
     namespace commands_names {
         const std::string CMD_NAME_DECLARE = "var";
@@ -49,7 +101,6 @@ namespace hjbase_cnt {
         const std::string CMD_PRINT = "print";
         const std::string CMD_IF = "if";
         const std::string CMD_WHILE = "while";
-        const std::string CMD_EXEC = "exec";
 
         const std::string CONFIG_FLOAT_POINT_ENABLE = "fp_on";
         const std::string CONFIG_FLOAT_POINT_DISABLE = "fp_off";
@@ -59,6 +110,36 @@ namespace hjbase_cnt {
         const std::string CONFIG_RAW_STRING_DISABLE = "rawstr_off";
 
         const std::string DEB_PRINT_GLOBAL_NAMES = "print_global_names";
+
+        enum {
+            eCMD_NAME_DECLARE,
+            eCMD_NAME_MUTATE,
+            eCMD_PRINT,
+            eCMD_IF,
+            eCMD_WHILE,
+            eCONFIG_FLOAT_POINT_ENABLE,
+            eCONFIG_FLOAT_POINT_DISABLE,
+            eCONFIG_DEBUG_MODE_ENABLE,
+            eCONFIG_DEBUG_MODE_DISABLE,
+            eCONFIG_RAW_STRING_ENABLE,
+            eCONFIG_RAW_STRING_DISABLE,
+            eDEB_PRINT_GLOBAL_NAMES,
+        };
+
+        const std::map<std::string, int> HJBASE_CMD_SEARCH_TREE = {
+            { CMD_NAME_DECLARE, eCMD_NAME_DECLARE },
+            { CMD_NAME_MUTATE, eCMD_NAME_MUTATE },
+            { CMD_PRINT, eCMD_PRINT },
+            { CMD_IF, eCMD_IF },
+            { CMD_WHILE, eCMD_WHILE },
+            { CONFIG_FLOAT_POINT_ENABLE, eCONFIG_FLOAT_POINT_ENABLE },
+            { CONFIG_FLOAT_POINT_DISABLE, eCONFIG_FLOAT_POINT_DISABLE },
+            { CONFIG_DEBUG_MODE_ENABLE, eCONFIG_DEBUG_MODE_ENABLE },
+            { CONFIG_DEBUG_MODE_DISABLE, eCONFIG_DEBUG_MODE_DISABLE },
+            { CONFIG_RAW_STRING_ENABLE, eCONFIG_RAW_STRING_ENABLE },
+            { CONFIG_RAW_STRING_DISABLE, eCONFIG_RAW_STRING_DISABLE },
+            { DEB_PRINT_GLOBAL_NAMES, eDEB_PRINT_GLOBAL_NAMES },
+        };
     }
     namespace common_msgs {
         const std::string SE_UNEXPECTED_TOKEN = "Syntax Error: Unexpceted token";
@@ -103,7 +184,6 @@ namespace hjbase_cnt {
     }
     namespace type_tag {
         const std::string STRING_TAG = "#:string";
-
     }
 }
 

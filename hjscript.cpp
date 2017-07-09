@@ -1,6 +1,7 @@
 #include "hjscript.hpp"
 
 using namespace hjbase_cnt::keywords;
+using namespace hjbase_cnt::operators;
 using namespace hjbase_cnt::common_msgs;
 using namespace hjbase_cnt::miscellaneous;
 using namespace hjbase_cnt::commands_names;
@@ -75,8 +76,11 @@ HUAJITOKENIZER::HUAJITOKENIZER(std::string file_name)
     , is_in_quotation (false)
     , is_in_block_comment (false)
     , is_in_line_comment (false)
+    , is_in_square_bracket (false)
+    , is_in_nosubst (false)
     , enable_raw_string (false) {
     source = new std::ifstream(file_name);
+    token_queue = new std::queue<std::string>;
 }
 
 HUAJITOKENIZER::HUAJITOKENIZER() 
@@ -84,21 +88,25 @@ HUAJITOKENIZER::HUAJITOKENIZER()
     , is_in_quotation (false)
     , is_in_block_comment (false)
     , is_in_line_comment (false)
+    , is_in_square_bracket (false)
+    , is_in_nosubst (false)
     , enable_raw_string (false) {
     source = &(std::cin);
+    token_queue = new std::queue<std::string>;
 }
 
 HUAJITOKENIZER::~HUAJITOKENIZER() {
     if(!is_cin) {
         delete source;
     }
+    delete token_queue;
 }
 
 std::string HUAJITOKENIZER::Get_One_Token() {
     std::string token;
-    if(pre_read.size()) {
-        token = pre_read;
-        pre_read.clear();
+    if(token_queue->size()) {
+        token = token_queue->front();
+        token_queue->pop();
         return token;
     }
     try {
@@ -218,10 +226,18 @@ std::string HUAJITOKENIZER::Get_One_Token() {
                     }
                     case '=': {
                         if(token.size()) {
-                            pre_read.push_back(cur_char);
+                            token_queue->push(std::string(1, cur_char));
                             return token;
                         }
                         return "=";
+                    }
+                    case cSLICER: {
+                        if(is_in_square_bracket&&token.size()) {
+                            return token;
+                        }
+                        else {
+                            return SLICER;
+                        }
                     }
                     case QUOTATION_MARK: {
                         is_in_quotation = true;
@@ -237,44 +253,76 @@ std::string HUAJITOKENIZER::Get_One_Token() {
                         }
                         break;
                     }
+                    case cSQUARE_BRACKET_START: {
+                        if(token.size()) {
+                            is_in_square_bracket = true;
+                            token_queue->push(OP_SLICE);
+                            token_queue->push(token);
+                            return EXPR_START;
+                        }
+                        else {
+                            return SQUARE_BRACKET_START;
+                        }
+                    }
+                    case cSQUARE_BRACKET_END: {
+                        if(token.size()) {
+                            if(is_in_square_bracket) {
+                                token_queue->push(EXPR_END);
+                                is_in_square_bracket = false;
+                            }
+                            else {
+                                token_queue->push(SQUARE_BRACKET_END);
+                            }
+                            return token;
+                        }
+                        else {
+                            if(is_in_square_bracket) {
+                                is_in_square_bracket = false;
+                                return EXPR_END;
+                            }
+                            else {
+                                return SQUARE_BRACKET_END;
+                            }
+                        }
+                    }
                     case cBLOCK_START: {
                         if(token.size()) {
-                            pre_read.push_back(cur_char);
+                            token_queue->push(std::string(1, cur_char));
                             return token;
                         }
                         return BLOCK_START;
                     }
                     case cBLOCK_END: {
                         if(token.size()) {
-                            pre_read.push_back(cur_char);
+                            token_queue->push(std::string(1, cur_char));
                             return token;
                         }
                         return BLOCK_END;
                     }
                     case cEXPR_START: {
                         if(token.size()) {
-                            pre_read.push_back(cur_char);
+                            token_queue->push(std::string(1, cur_char));
                             return token;
                         }
                         return EXPR_START;
                     }
                     case cEXPR_END: {
                         if(token.size()) {
-                            pre_read.push_back(cur_char);
+                            token_queue->push(std::string(1, cur_char));
                             return token;
                         }
                         return EXPR_END;
                     }
                     case cSEPARATOR: {
                         if(token.size()) {
-                            pre_read.push_back(cur_char);
+                            token_queue->push(std::string(1, cur_char));
                             return token;
                         }
                         return SEPARATOR;
                     }
                     case cDELIMITER: {
                         if(token.size()) {
-                            pre_read.push_back(cur_char);
+                            token_queue->push(std::string(1, cur_char));
                             return token;
                         }
                         return DELIMITER;
@@ -617,195 +665,180 @@ int HUAJISCRIPTBASE::Huaji_Command_Interpreter(const std::vector<std::string> *c
 
     std::string command = command_to_be_executed->front();
 
+    int cmd_key;
+    if(HJBASE_CMD_SEARCH_TREE.find(command)!=HJBASE_CMD_SEARCH_TREE.end()) {
+        cmd_key = HJBASE_CMD_SEARCH_TREE.at(command);
+    }
+    else {
+        return More_On_Command_Level_1(command_to_be_executed);
+    }
+
+    switch (cmd_key) {
     // Variable declare
-    if(command == CMD_NAME_DECLARE) {
+        case eCMD_NAME_DECLARE: {
 
-        if(command_to_be_executed->size() < 3) {
-            Signal_Error(SE_REQUIRE_MORE_TOKENS, command_to_be_executed);
-            Cleanup_If_Exception_Thrown();
-            return VALID_COMMAND_RETURN_CODE;
-        }
+            if(command_to_be_executed->size() < 3) {
+                Signal_Error(SE_REQUIRE_MORE_TOKENS, command_to_be_executed);
+                Cleanup_If_Exception_Thrown();
+                return VALID_COMMAND_RETURN_CODE;
+            }
 
-        std::string name = command_to_be_executed->at(1);
-        int declared = 0;
+            std::string name = command_to_be_executed->at(1);
+            int declared = 0;
 
-        std::vector<std::string> *expr = nullptr;
-        std::string val;
+            std::vector<std::string> *expr = nullptr;
+            std::string val;
 
-        try {
-            for(std::vector<std::string>::const_iterator it=command_to_be_executed->begin()+2;it!=command_to_be_executed->end()-1;++it) {
-                // Assign VAL when declare
-                if(*it==OP_EQ) {
-                    std::vector<std::string>::const_iterator expr_begin_it = it+1;
-                    // right expr not provided
-                    if(expr_begin_it==command_to_be_executed->end()-1) {
-                        Signal_Error(SE_UNEXPECTED_TOKEN, command_to_be_executed);
-                        throw syntax_except;
-                    }
-                    std::vector<std::string>::const_iterator expr_end_it = it+2;
-                    for(it=expr_end_it;it!=command_to_be_executed->end()-1;++it) {
-                        // expr_end_it should be it + 1 as it is excluded
-                        expr_end_it = it;
-                        if(*it==SEPARATOR) {
-                            break;
+            try {
+                for(std::vector<std::string>::const_iterator it=command_to_be_executed->begin()+2;it!=command_to_be_executed->end()-1;++it) {
+                    // Assign VAL when declare
+                    if(*it==OP_EQ) {
+                        std::vector<std::string>::const_iterator expr_begin_it = it+1;
+                        // right expr not provided
+                        if(expr_begin_it==command_to_be_executed->end()-1) {
+                            Signal_Error(SE_UNEXPECTED_TOKEN, command_to_be_executed);
+                            throw syntax_except;
                         }
-                    }
-                    if(it==command_to_be_executed->end()-1) {
-                        /*
-                            Here is means it is at same point at DELIMITER, 
-                            so we need to assign expr_end_it = it (because this is not executed yet) first,
-                            and more importantly decrease it by 1 as ++it in outter loop will bring it==command_to_be_executed->end()
-                            and cause undefined behaviour.
+                        std::vector<std::string>::const_iterator expr_end_it = it+2;
+                        for(it=expr_end_it;it!=command_to_be_executed->end()-1;++it) {
+                            // expr_end_it should be it + 1 as it is excluded
+                            expr_end_it = it;
+                            if(*it==SEPARATOR) {
+                                break;
+                            }
+                        }
+                        if(it==command_to_be_executed->end()-1) {
+                            /*
+                                Here is means it is at same point at DELIMITER, 
+                                so we need to assign expr_end_it = it (because this is not executed yet) first,
+                                and more importantly decrease it by 1 as ++it in outter loop will bring it==command_to_be_executed->end()
+                                and cause undefined behaviour.
+                            */
+                            expr_end_it = it;
+                            --it;
+                        }
+                        /* 
+                            Create new ast node by allocate new string object
+                            evaluate and free memory, if exception thrown in evaluation
+                            expcetion will be caught and memory will be freed
                         */
-                        expr_end_it = it;
-                        --it;
-                    }
-                    /* 
-                        Create new ast node by allocate new string object
-                        evaluate and free memory, if exception thrown in evaluation
-                        expcetion will be caught and memory will be freed
-                    */
-                    expr = new std::vector<std::string>(expr_begin_it, expr_end_it);
-                    val = Evaluate_Expression(expr);
-                    delete expr;
-                    expr = nullptr;
-
-                    // Declare name in global name map names, and flag as declared.
-                    Declare_Name(name, val, names);
-                    declared = 1;
-                }
-                else if(*it==SEPARATOR) {
-                    if(declared) {
-                        Signal_Error(SE_UNEXPECTED_TOKEN, command_to_be_executed);
-                        throw syntax_except;
-                    }
-                    Declare_Name(name, INITIAL_VALUE, names);
-                    declared = 1;
-                }
-                // must be a name
-                else {
-                    if(!declared) {
-                        Signal_Error(SE_UNEXPECTED_TOKEN, command_to_be_executed);
-                        throw syntax_except;
-                    }
-                    name = *it;
-                    declared = 0;
-                }
-            }
-
-            // declared is 0 means still remaining name undeclared
-            if(!declared) {
-                Declare_Name(name, INITIAL_VALUE, names);
-            }
-        }
-        catch (const HUAJIBASE_EXCEPTION& hj_base_except){
-            if(expr) {
-                delete expr;
-            }
-            Cleanup_If_Exception_Thrown();
-            return VALID_COMMAND_RETURN_CODE;
-        }
-    }
-
-    else if(command == CMD_NAME_MUTATE) {
-        if(command_to_be_executed->size() < 5) {
-            Signal_Error(SE_REQUIRE_MORE_TOKENS, command_to_be_executed);
-            Cleanup_If_Exception_Thrown();
-            return VALID_COMMAND_RETURN_CODE;
-        }
-        if(command_to_be_executed->at(2)!=CMD_NAME_MUTATE_TO) {
-            Signal_Error(SE_UNEXPECTED_TOKEN, command_to_be_executed);
-            Cleanup_If_Exception_Thrown();
-            return VALID_COMMAND_RETURN_CODE;
-        }
-        std::string name = command_to_be_executed->at(1);
-        std::vector<std::string> *expr = new std::vector<std::string>(command_to_be_executed->begin()+3, command_to_be_executed->end()-1);
-        std::string val;
-        try {
-            val = Evaluate_Expression(expr);
-            Mutate_Name(name, val, names);
-        }
-        catch (const HUAJIBASE_EXCEPTION& hj_base_except){
-            if(expr) {
-                delete expr;
-            }
-            Cleanup_If_Exception_Thrown();
-            return VALID_COMMAND_RETURN_CODE;
-        }
-        if(expr) {
-            delete expr;
-        }
-    }
-
-    // Print command 
-    else if(command == CMD_PRINT) {
-        bool nl_flag = true;
-        for(std::vector<std::string>::const_iterator it=command_to_be_executed->begin()+1;it!=command_to_be_executed->end()-1;++it) {
-            if((*it)==NONEWLINE&&nl_flag) {
-                nl_flag = false;
-            }
-            else if((*it)==USE_EXPR_FROM_HERE&&it!=command_to_be_executed->end()-2) {
-                std::vector<std::string> *expr = new std::vector<std::string>(it+1,command_to_be_executed->end()-1);
-                try {
-                    std::cout<<Evaluate_Expression(expr);
-                }
-                catch (const HUAJIBASE_EXCEPTION& hj_base_except) {
-                    if(expr) {
+                        expr = new std::vector<std::string>(expr_begin_it, expr_end_it);
+                        val = Evaluate_Expression(expr);
                         delete expr;
+                        expr = nullptr;
+
+                        // Declare name in global name map names, and flag as declared.
+                        Declare_Name(name, val, names);
+                        declared = 1;
                     }
-                    Cleanup_If_Exception_Thrown();
-                    return VALID_COMMAND_RETURN_CODE;
+                    else if(*it==SEPARATOR) {
+                        if(declared) {
+                            Signal_Error(SE_UNEXPECTED_TOKEN, command_to_be_executed);
+                            throw syntax_except;
+                        }
+                        Declare_Name(name, INITIAL_VALUE, names);
+                        declared = 1;
+                    }
+                    // must be a name
+                    else {
+                        if(!declared) {
+                            Signal_Error(SE_UNEXPECTED_TOKEN, command_to_be_executed);
+                            throw syntax_except;
+                        }
+                        name = *it;
+                        declared = 0;
+                    }
                 }
-                break;
+
+                // declared is 0 means still remaining name undeclared
+                if(!declared) {
+                    Declare_Name(name, INITIAL_VALUE, names);
+                }
             }
-            else {
-                try {
-                    std::cout<<Handle_Val(*it);
+            catch (const HUAJIBASE_EXCEPTION& hj_base_except){
+                if(expr) {
+                    delete expr;
                 }
-                catch (const HUAJIBASE_EXCEPTION& hj_base_except) {                
-                    Cleanup_If_Exception_Thrown();
-                    return VALID_COMMAND_RETURN_CODE;
+                Cleanup_If_Exception_Thrown();
+                return VALID_COMMAND_RETURN_CODE;
+            }
+            break;
+        }
+
+        case eCMD_NAME_MUTATE: {
+            if(command_to_be_executed->size() < 5) {
+                Signal_Error(SE_REQUIRE_MORE_TOKENS, command_to_be_executed);
+                Cleanup_If_Exception_Thrown();
+                return VALID_COMMAND_RETURN_CODE;
+            }
+            if(command_to_be_executed->at(2)!=CMD_NAME_MUTATE_TO) {
+                Signal_Error(SE_UNEXPECTED_TOKEN, command_to_be_executed);
+                Cleanup_If_Exception_Thrown();
+                return VALID_COMMAND_RETURN_CODE;
+            }
+            std::string name = command_to_be_executed->at(1);
+            std::vector<std::string> *expr = new std::vector<std::string>(command_to_be_executed->begin()+3, command_to_be_executed->end()-1);
+            std::string val;
+            try {
+                val = Evaluate_Expression(expr);
+                Mutate_Name(name, val, names);
+            }
+            catch (const HUAJIBASE_EXCEPTION& hj_base_except){
+                if(expr) {
+                    delete expr;
+                }
+                Cleanup_If_Exception_Thrown();
+                return VALID_COMMAND_RETURN_CODE;
+            }
+            if(expr) {
+                delete expr;
+            }
+            break;
+        }
+
+        // Print command 
+        case eCMD_PRINT: {
+            bool nl_flag = true;
+            for(std::vector<std::string>::const_iterator it=command_to_be_executed->begin()+1;it!=command_to_be_executed->end()-1;++it) {
+                if((*it)==NONEWLINE&&nl_flag) {
+                    nl_flag = false;
+                }
+                else if((*it)==USE_EXPR_FROM_HERE&&it!=command_to_be_executed->end()-2) {
+                    std::vector<std::string> *expr = new std::vector<std::string>(it+1,command_to_be_executed->end()-1);
+                    try {
+                        std::cout<<Evaluate_Expression(expr);
+                    }
+                    catch (const HUAJIBASE_EXCEPTION& hj_base_except) {
+                        if(expr) {
+                            delete expr;
+                        }
+                        Cleanup_If_Exception_Thrown();
+                        return VALID_COMMAND_RETURN_CODE;
+                    }
+                    delete expr;
+                    break;
+                }
+                else {
+                    try {
+                        std::cout<<Handle_Val(*it);
+                    }
+                    catch (const HUAJIBASE_EXCEPTION& hj_base_except) {                
+                        Cleanup_If_Exception_Thrown();
+                        return VALID_COMMAND_RETURN_CODE;
+                    }
                 }
             }
-        }
-        if(nl_flag) {
-            std::cout<<std::endl;
-        }
-    }
-
-    // If command
-    else if(command == CMD_IF) {
-
-        bool condition = false;
-
-        try {
-            condition = Find_And_Evaluate_Condition(command_to_be_executed);
-        }
-        catch (const HUAJIBASE_EXCEPTION& hj_base_except){
-            Cleanup_If_Exception_Thrown();
-            return VALID_COMMAND_RETURN_CODE;
+            if(nl_flag) {
+                std::cout<<std::endl;
+            }
+            break;
         }
 
-        if(condition) {
-            Block_Execution(command_to_be_executed);
-        }
-    }
+        // If command
+        case eCMD_IF: {
 
-    // While command
-    else if(command == CMD_WHILE) {
+            bool condition = false;
 
-        bool condition = false;
-
-        try {
-            condition = Find_And_Evaluate_Condition(command_to_be_executed);
-        }
-        catch (const HUAJIBASE_EXCEPTION& hj_base_except){
-            Cleanup_If_Exception_Thrown();
-            return VALID_COMMAND_RETURN_CODE;
-        }
-
-        while(condition) {
-            Block_Execution(command_to_be_executed);
             try {
                 condition = Find_And_Evaluate_Condition(command_to_be_executed);
             }
@@ -813,47 +846,85 @@ int HUAJISCRIPTBASE::Huaji_Command_Interpreter(const std::vector<std::string> *c
                 Cleanup_If_Exception_Thrown();
                 return VALID_COMMAND_RETURN_CODE;
             }
+
+            if(condition) {
+                Block_Execution(command_to_be_executed);
+            }
+            break;
         }
-    }
 
-    else if(command == DEB_PRINT_GLOBAL_NAMES) {
-        Print_Name_Map(names);
-    }
+        // While command
+        case eCMD_WHILE: {
 
-    else if(command == CONFIG_FLOAT_POINT_ENABLE) {
-        enable_float_point = true;
-    }
+            bool condition = false;
 
-    else if(command == CONFIG_FLOAT_POINT_DISABLE) {
-        enable_float_point = false;
-    }
+            try {
+                condition = Find_And_Evaluate_Condition(command_to_be_executed);
+            }
+            catch (const HUAJIBASE_EXCEPTION& hj_base_except){
+                Cleanup_If_Exception_Thrown();
+                return VALID_COMMAND_RETURN_CODE;
+            }
 
-    else if(command == CONFIG_RAW_STRING_ENABLE) {
-        enable_raw_string = true;
-        tokenizer->enable_raw_string = true;
-    }
+            while(condition) {
+                Block_Execution(command_to_be_executed);
+                try {
+                    condition = Find_And_Evaluate_Condition(command_to_be_executed);
+                }
+                catch (const HUAJIBASE_EXCEPTION& hj_base_except){
+                    Cleanup_If_Exception_Thrown();
+                    return VALID_COMMAND_RETURN_CODE;
+                }
+            }
+            break;
+        }
 
-    else if(command == CONFIG_RAW_STRING_DISABLE) {
-        enable_raw_string = false;
-        tokenizer->enable_raw_string = false;
-    }
+        case eDEB_PRINT_GLOBAL_NAMES: {
+            Print_Name_Map(names);
+            break;
+        }
 
-    else if(command == CONFIG_DEBUG_MODE_ENABLE) {
-        enable_debug_mode = true;
-        current_ast_depth = 0;
-        std::cout<<"Debug Mode on..."<<std::endl;
-        return VALID_COMMAND_RETURN_CODE;
-    }
+        case eCONFIG_FLOAT_POINT_ENABLE: {
+            enable_float_point = true;
+            break;
+        }
 
-    else if(command == CONFIG_DEBUG_MODE_DISABLE) {
-        enable_debug_mode = false;
-        current_ast_depth = 0;
-        std::cout<<"Debug Mode off..."<<std::endl;
-        return VALID_COMMAND_RETURN_CODE;
-    }
+        case eCONFIG_FLOAT_POINT_DISABLE: {
+            enable_float_point = false;
+            break;
+        }
 
-    else {
-        return More_On_Command_Level_1(command_to_be_executed);
+        case eCONFIG_RAW_STRING_ENABLE: {
+            enable_raw_string = true;
+            tokenizer->enable_raw_string = true;
+            break;
+        }
+
+        case eCONFIG_RAW_STRING_DISABLE: {
+            enable_raw_string = false;
+            tokenizer->enable_raw_string = false;
+            break;
+        }
+
+        case eCONFIG_DEBUG_MODE_ENABLE: {
+            enable_debug_mode = true;
+            current_ast_depth = 0;
+            std::cout<<"Debug Mode on..."<<std::endl;
+            return VALID_COMMAND_RETURN_CODE;
+        }
+
+        case eCONFIG_DEBUG_MODE_DISABLE: {
+            enable_debug_mode = false;
+            current_ast_depth = 0;
+            std::cout<<"Debug Mode off..."<<std::endl;
+            return VALID_COMMAND_RETURN_CODE;
+        }
+
+        default: {
+            Signal_Error(IE_UNDEFINED_NAME, command_to_be_executed);
+            return INVALID_COMMAND_RETURN_CODE;
+        }
+
     }
 
     Print_Debug_Info(DEB_COMMAND_END, DECREASE_AST_DEPTH, command);
@@ -1032,90 +1103,105 @@ std::string HUAJISCRIPTBASE::Numerical_Operation_Templated_Helper(const std::str
     }
 
     // val initialization complete, perform native calculation
+    int op_key = NUMERICAL_OPERATORS.at(op);
     try {
-        if(op==OP_ADD) {
-            for(int i=0;i<vals_size;++i) {
-                numerical_ans_val += numerical_vals[i];
+        switch (op_key) {
+            case eOP_ADD: {
+                for(int i=0;i<vals_size;++i) {
+                    numerical_ans_val += numerical_vals[i];
+                }
+                break;
             }
-        }
-        else if(op==OP_MINUS) {
-            numerical_ans_val = numerical_vals[0];
-            for(int i=1;i<vals_size;++i) {
-                numerical_ans_val -= numerical_vals[i];
+            case eOP_MINUS: {
+                numerical_ans_val = numerical_vals[0];
+                for(int i=1;i<vals_size;++i) {
+                    numerical_ans_val -= numerical_vals[i];
+                }
+                break;
             }
-        }
-        else if(op==OP_MULTIPLY) {
-            for(int i=0;i<vals_size;++i) {
-                numerical_ans_val *= numerical_vals[i];
+            case eOP_MULTIPLY: {
+                for(int i=0;i<vals_size;++i) {
+                    numerical_ans_val *= numerical_vals[i];
+                }
+                break;
             }
-        }
-        else if(op==OP_DIVISION) {
-            numerical_ans_val = numerical_vals[0];
-            for(int i=1;i<vals_size;++i) {
-                if(numerical_vals[i]==0) {
-                    Signal_Error(AE_DVZ, vals);
+            case eOP_DIVISION: {
+                numerical_ans_val = numerical_vals[0];
+                for(int i=1;i<vals_size;++i) {
+                    if(numerical_vals[i]==0) {
+                        Signal_Error(AE_DVZ, vals);
+                        throw eval_except;
+                    }
+                    numerical_ans_val /= numerical_vals[i];
+                }
+                break;
+            }
+            case eOP_MOD: {
+                if(vals_size!=2) {
+                    Signal_Error(SE_ARITY_MISMATCH, vals);
                     throw eval_except;
                 }
-                numerical_ans_val /= numerical_vals[i];
-            }
-        }
-        else if(op==OP_MOD) {
-            if(vals_size!=2) {
-                Signal_Error(SE_ARITY_MISMATCH, vals);
-                throw eval_except;
-            }
-            else {
-                if(long(numerical_vals[1])==0) {
-                    Signal_Error(AE_DVZ, vals);
-                    throw eval_except;
-                }
-                /*
-                    As this template also applys to double, we have to make compiler happy by add casting.
-                    Although it sounds reasonable to signal error when performing modulo expression with 
-                    floating point number, I still want to let it possible by converted to integer.
-                */
-                return std::to_string(long(numerical_vals[0])%long(numerical_vals[1]));
-            }
-        }
-        else if(op==OP_LE) {
-            direct_string_return = true;
-            direct_return_string = BOOL_TRUE;
-            for(int i=1;i<vals_size;++i) {
-                // I feel this is clearer, although use '>' might save time
-                if(!(numerical_vals[i-1]<=numerical_vals[i])){
-                    direct_return_string = BOOL_FALSE;
-                    break;
+                else {
+                    if(static_cast<long>(numerical_vals[1])==0) {
+                        Signal_Error(AE_DVZ, vals);
+                        throw eval_except;
+                    }
+                    /*
+                        As this template also applys to double, we have to make compiler happy by add casting.
+                        Although it sounds reasonable to signal error when performing modulo expression with 
+                        floating point number, I still want to let it possible by converted to integer.
+                    */
+                    return std::to_string(static_cast<long>(numerical_vals[0])%static_cast<long>(numerical_vals[1]));
                 }
             }
-        }
-        else if(op==OP_GE) {
-            direct_string_return = true;
-            direct_return_string = BOOL_TRUE;
-            for(int i=1;i<vals_size;++i) {
-                if(!(numerical_vals[i-1]>=numerical_vals[i])){
-                    direct_return_string = BOOL_FALSE;
-                    break;
+            case eOP_LE: {
+                direct_string_return = true;
+                direct_return_string = BOOL_TRUE;
+                for(int i=1;i<vals_size;++i) {
+                    // I feel this is clearer, although use '>' might save time
+                    if(!(numerical_vals[i-1]<=numerical_vals[i])){
+                        direct_return_string = BOOL_FALSE;
+                        break;
+                    }
                 }
+                break;
             }
-        }
-        else if(op==OP_LT) {
-            direct_string_return = true;
-            direct_return_string = BOOL_TRUE;
-            for(int i=1;i<vals_size;++i) {
-                if(!(numerical_vals[i-1]<numerical_vals[i])){
-                    direct_return_string = BOOL_FALSE;
-                    break;
+            case eOP_GE: {
+                direct_string_return = true;
+                direct_return_string = BOOL_TRUE;
+                for(int i=1;i<vals_size;++i) {
+                    if(!(numerical_vals[i-1]>=numerical_vals[i])){
+                        direct_return_string = BOOL_FALSE;
+                        break;
+                    }
                 }
+                break;
             }
-        }
-        else if(op==OP_GT) {
-            direct_string_return = true;
-            direct_return_string = BOOL_TRUE;
-            for(int i=1;i<vals_size;++i) {
-                if(!(numerical_vals[i-1]>numerical_vals[i])){
-                    direct_return_string = BOOL_FALSE;
-                    break;
+            case eOP_LT: {
+                direct_string_return = true;
+                direct_return_string = BOOL_TRUE;
+                for(int i=1;i<vals_size;++i) {
+                    if(!(numerical_vals[i-1]<numerical_vals[i])){
+                        direct_return_string = BOOL_FALSE;
+                        break;
+                    }
                 }
+                break;
+            }
+            case eOP_GT: {
+                direct_string_return = true;
+                direct_return_string = BOOL_TRUE;
+                for(int i=1;i<vals_size;++i) {
+                    if(!(numerical_vals[i-1]>numerical_vals[i])){
+                        direct_return_string = BOOL_FALSE;
+                        break;
+                    }
+                }
+                break;
+            }
+            default: {
+                Signal_Error(IE_UNKNOWN, op);
+                throw huaji_except;
             }
         }
     }
@@ -1178,59 +1264,112 @@ std::string HUAJISCRIPTBASE::Numerical_Operation(const std::string &op, const st
     return ans_val;
 }
 
+std::string HUAJISCRIPTBASE::More_On_Slice_Operator_Level_1(const std::vector<std::string> *vals) {
+    throw huaji_except;
+}
+
 std::string HUAJISCRIPTBASE::Other_Basic_Operation(const std::string &op, const std::vector<std::string> *vals) {
     if(!vals->size()) {
         Signal_Error(SE_ARITY_MISMATCH, op);
         throw syntax_except;
     }
+    // Previously we checked if op is in OTHER_BASIC_OPERATORS
+    int op_key = OTHER_BASIC_OPERATORS.at(op);
     try {
-        if(op==OP_AND) {
-            for(std::vector<std::string>::const_iterator it=vals->begin();it!=vals->end();++it) {
-                if(*it==BOOL_FALSE) {
-                    return BOOL_FALSE;
-                }
-            }
-            return BOOL_TRUE;
-        }        
-        if(op==OP_OR) {
-            for(std::vector<std::string>::const_iterator it=vals->begin();it!=vals->end();++it) {
-                if(*it!=BOOL_FALSE) {
-                    return BOOL_TRUE;
-                }
-            }
-            return BOOL_FALSE;
-        }
-        if(op==OP_NOT) {
-            if(vals->size()!=1) {
-                Signal_Error(SE_ARITY_MISMATCH, vals);
-                throw eval_except;
-            }
-            if(vals->front()!=BOOL_FALSE) {
-                return BOOL_TRUE;
-            }
-            return BOOL_FALSE;
-        }
-        if(op==OP_EQ) {
-            for(std::vector<std::string>::const_iterator it=vals->begin()+1;it!=vals->end();++it) {
-                if(*(it-1)!=*it) {
-                    return BOOL_FALSE;
-                }
-            }
-            return BOOL_TRUE;
-        }
-        if(op==OP_NE) {
-            for(std::vector<std::string>::const_iterator it_first=vals->begin();it_first!=vals->end()-1;++it_first) {
-                for(std::vector<std::string>::const_iterator it_second=vals->begin()+1;it_second!=vals->end();++it_second) {
-                    if(*it_first==*it_second) {
+        switch (op_key) {
+            case eOP_AND: {
+                for(std::vector<std::string>::const_iterator it=vals->begin();it!=vals->end();++it) {
+                    if(*it==BOOL_FALSE) {
                         return BOOL_FALSE;
                     }
                 }
+                return BOOL_TRUE;
+            }        
+            case eOP_OR: {
+                for(std::vector<std::string>::const_iterator it=vals->begin();it!=vals->end();++it) {
+                    if(*it!=BOOL_FALSE) {
+                        return BOOL_TRUE;
+                    }
+                }
+                return BOOL_FALSE;
             }
-            return BOOL_TRUE;
+            case eOP_NOT: {
+                if(vals->size()!=1) {
+                    Signal_Error(SE_ARITY_MISMATCH, vals);
+                    throw eval_except;
+                }
+                if(vals->front()!=BOOL_FALSE) {
+                    return BOOL_TRUE;
+                }
+                return BOOL_FALSE;
+            }
+            case eOP_EQ: {
+                for(std::vector<std::string>::const_iterator it=vals->begin()+1;it!=vals->end();++it) {
+                    if(*(it-1)!=*it) {
+                        return BOOL_FALSE;
+                    }
+                }
+                return BOOL_TRUE;
+            }
+            case eOP_NE: {
+                for(std::vector<std::string>::const_iterator it_first=vals->begin();it_first!=vals->end()-1;++it_first) {
+                    for(std::vector<std::string>::const_iterator it_second=vals->begin()+1;it_second!=vals->end();++it_second) {
+                        if(*it_first==*it_second) {
+                            return BOOL_FALSE;
+                        }
+                    }
+                }
+                return BOOL_TRUE;
+            }
+            case eOP_STRAPP: {
+                std::string ans_val;
+                for(std::vector<std::string>::const_iterator it=vals->begin();it!=vals->end();++it) {
+                    ans_val.append(*it);
+                }
+                return ans_val;
+            }
+            case eOP_SLICE: {
+                try {
+                    return More_On_Slice_Operator_Level_1(vals);
+                }
+                catch (const HUAJIBASE_EXCEPTION &huaji_except) {
+                    int vals_size = vals->size();
+                    if(vals_size>1) {
+                        int slice_start = std::stoi(vals->at(1));
+                        if(vals_size==3) {
+                            int slice_end = std::stoi(vals->at(2));
+                            return vals->at(0).substr(slice_start, slice_end-slice_start);
+                        }
+                        else if(vals_size==2) {
+                            return std::string(1, vals->at(0).at(slice_start));
+                        }
+                        else {
+                            Signal_Error(SE_ARITY_MISMATCH, vals);
+                            throw syntax_except;
+                        }
+                    }
+                    else {
+                        Signal_Error(SE_ARITY_MISMATCH, vals);
+                        throw syntax_except;
+                    }
+                }
+            }
+            default: {
+                Signal_Error(IE_UNKNOWN, op);
+                throw huaji_except;
+            }
         }
     }
-    catch (const HUAJIBASE_EXCEPTION& hj_base_except) {
+    catch (const HUAJIBASE_EXCEPTION &hj_base_except) {
         throw hj_base_except;
+    }
+    catch (const std::invalid_argument &ia) {
+        Signal_Error(NE_CONVERSION_FAILED, vals);
+        throw eval_except;
+    }
+    catch (const std::out_of_range &oor) {
+        Signal_Error(NE_OUT_OF_RANGE, vals);
+        throw eval_except;
     }
     catch (...) {
         Signal_Error(IE_UNKNOWN, vals);
@@ -1249,19 +1388,15 @@ std::string HUAJISCRIPTBASE::More_On_Expression_Level_1(const std::string &op, c
 std::string HUAJISCRIPTBASE::Basic_Operation(const std::string &op, const std::vector<std::string> *vals) {
     std::string ans_val;
     try {
-        if (NUMERICAL_OPERATORS.find(op)!=std::string::npos) {
-            /* 
-                Check if operator is numerical operator, if is its, apply numerical operation.
-                For strings can't be converted to numbers, throw eval_except;
-            */
+        if (NUMERICAL_OPERATORS.find(op)!=NUMERICAL_OPERATORS.end()) {
             ans_val = Numerical_Operation(op, vals);
         }
         // Other basic operations
-        else if (OTHER_BASIC_OPERATORS.find(op)!=std::string::npos) {
-            Other_Basic_Operation(op, vals);
+        else if (OTHER_BASIC_OPERATORS.find(op)!=OTHER_BASIC_OPERATORS.end()) {
+            ans_val = Other_Basic_Operation(op, vals);
         }
         else {
-            More_On_Expression_Level_1(op, vals);
+            ans_val = More_On_Expression_Level_1(op, vals);
         }
     }
     catch (const HUAJIBASE_EXCEPTION& hj_base_except) {
@@ -1276,7 +1411,7 @@ std::string HUAJISCRIPTBASE::Basic_Operation(const std::string &op, const std::v
 }
 
 std::string HUAJISCRIPTBASE::More_On_Names_Query_Level_1(const std::string &name) {
-    return Resolve_Name(name, names);
+    throw name_except;
 }
 
 std::string HUAJISCRIPTBASE::Handle_Val(const std::string &name_or_val) {

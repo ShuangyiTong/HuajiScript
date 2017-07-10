@@ -25,7 +25,7 @@ void hjbase_ufunc::Highlight_Error_Part(const std::vector<std::string> *vector_s
     std::cout<<std::endl;
 }
 
-void hjbase_ufunc::Signal_Error(const std::string &error_msg, const std::vector<std::string> *error_part) {
+void hjbase_ufunc::Signal_Error(const std::string& error_msg, const std::vector<std::string> *error_part) {
     std::cerr<<error_msg<<std::endl;
     std::cout<<"    ";
     Print_Vector_String(error_part);
@@ -33,7 +33,7 @@ void hjbase_ufunc::Signal_Error(const std::string &error_msg, const std::vector<
     Highlight_Error_Part(error_part);
 }
 
-void hjbase_ufunc::Signal_Error(const std::string &error_msg, const std::string &error_part) {
+void hjbase_ufunc::Signal_Error(const std::string& error_msg, const std::string& error_part) {
     std::cerr<<error_msg<<std::endl;
     std::cout<<"    "<<error_part<<std::endl;
 }
@@ -56,14 +56,14 @@ bool hjbase_ufunc::Check_If_Float_Point(const std::vector<std::string> *vals) {
     return false;
 }
 
-inline bool hjbase_ufunc::Starts_With(const std::string &this_str, const std::string &start_str) {
+inline bool hjbase_ufunc::Starts_With(const std::string& this_str, const std::string& start_str) {
     if(this_str.substr(0,start_str.size())==start_str) {
         return true;
     }
     return false;
 }
 
-inline bool hjbase_ufunc::Is_Numerical(const std::string &this_str) {
+inline bool hjbase_ufunc::Is_Numerical(const std::string& this_str) {
     for(std::string::const_iterator it=this_str.begin();it!=this_str.end();++it) {
         if(!isdigit(*it)&&(*it)!='.') {
             return false;
@@ -401,7 +401,7 @@ std::string HUAJISCRIPTBASE::Indent_By_AST_Depth() {
     return std::string();
 }
 
-void HUAJISCRIPTBASE::Print_Debug_Info(const std::string &info, int ast_depth_change, const std::vector<std::string> *node) {
+void HUAJISCRIPTBASE::Print_Debug_Info(const std::string& info, int ast_depth_change, const std::vector<std::string> *node) {
     if(enable_debug_mode) {
         if(ast_depth_change<0) {
             current_ast_depth += ast_depth_change;
@@ -414,7 +414,7 @@ void HUAJISCRIPTBASE::Print_Debug_Info(const std::string &info, int ast_depth_ch
     }
 }
 
-void HUAJISCRIPTBASE::Print_Debug_Info(const std::string &info, int ast_depth_change, const std::string &node) {
+void HUAJISCRIPTBASE::Print_Debug_Info(const std::string& info, int ast_depth_change, const std::string& node) {
     if(enable_debug_mode) {
         if(ast_depth_change<0) {
             current_ast_depth += ast_depth_change;
@@ -438,7 +438,7 @@ void HUAJISCRIPTBASE::Print_Name_Map(const std::map<std::string, std::string> *n
     }
 }
 
-int HUAJISCRIPTBASE::Collect_Tokens(const std::string &token) {
+int HUAJISCRIPTBASE::Collect_Tokens(const std::string& token) {
 
     // Increase collect_status by 1 as it is an left brace
     if(token==BLOCK_START) {
@@ -484,7 +484,7 @@ int HUAJISCRIPTBASE::Collect_Tokens(const std::string &token) {
     }
 }
 
-int HUAJISCRIPTBASE::Take_One_Token(const std::string &token, std::vector<std::string> *command) {
+int HUAJISCRIPTBASE::Take_One_Token(const std::string& token, std::vector<std::string> *command) {
 
     command->push_back(token);
 
@@ -544,7 +544,7 @@ void HUAJISCRIPTBASE::Entry_Point() {
     }
 }
 
-void HUAJISCRIPTBASE::Declare_Name(const std::string &name, const std::string &val, std::map<std::string, std::string> *target_scope_names) {
+void HUAJISCRIPTBASE::Declare_Name(const std::string& name, const std::string& val, std::map<std::string, std::string> *target_scope_names) {
     // insert return a std::pair, with second element specifying if successfully inserted.
     if((target_scope_names->insert(std::pair<std::string, std::string>(name, val))).second==false) {
         Signal_Error(NAE_REDECLARE, name);
@@ -553,7 +553,7 @@ void HUAJISCRIPTBASE::Declare_Name(const std::string &name, const std::string &v
     return;
 }
 
-void HUAJISCRIPTBASE::Mutate_Name(const std::string &name, const std::string &val, std::map<std::string, std::string> *target_scope_names) {
+void HUAJISCRIPTBASE::Mutate_Name(const std::string& name, const std::string& val, std::map<std::string, std::string> *target_scope_names) {
     try {
         target_scope_names->at(name);
     }
@@ -566,7 +566,7 @@ void HUAJISCRIPTBASE::Mutate_Name(const std::string &name, const std::string &va
     return;
 }
 
-std::string HUAJISCRIPTBASE::Resolve_Name(const std::string &name, const std::map<std::string, std::string> *target_scope_names) {
+std::string HUAJISCRIPTBASE::Resolve_Name(const std::string& name, const std::map<std::string, std::string> *target_scope_names) {
     std::string val;
     try {
         val = target_scope_names->at(name);
@@ -1067,7 +1067,7 @@ std::string HUAJISCRIPTBASE::Evaluate_Expression(const std::vector<std::string> 
 }
 
 template <typename T>
-std::string HUAJISCRIPTBASE::Numerical_Operation_Templated_Helper(const std::string &op, int vals_size, int T_name, const std::vector<std::string> *vals) {
+std::string HUAJISCRIPTBASE::Numerical_Operation_Templated_Helper(const std::string& op, int op_key, int vals_size, int T_name, const std::vector<std::string> *vals) {
     // Initialize numerical value array
     T *numerical_vals = new T[vals_size];
     T numerical_ans_val = 0;
@@ -1103,8 +1103,6 @@ std::string HUAJISCRIPTBASE::Numerical_Operation_Templated_Helper(const std::str
         }
     }
 
-    // val initialization complete, perform native calculation
-    int op_key = NUMERICAL_OPERATORS.at(op);
     try {
         switch (op_key) {
             case eOP_ADD: {
@@ -1233,10 +1231,10 @@ std::string HUAJISCRIPTBASE::Numerical_Operation_Templated_Helper(const std::str
 }
 
 // Explicit template instantiation
-template std::string HUAJISCRIPTBASE::Numerical_Operation_Templated_Helper<long>(const std::string &, int, int, const std::vector<std::string> *vals);
-template std::string HUAJISCRIPTBASE::Numerical_Operation_Templated_Helper<double>(const std::string &, int, int, const std::vector<std::string> *vals);
+template std::string HUAJISCRIPTBASE::Numerical_Operation_Templated_Helper<long>(const std::string&, int, int, int, const std::vector<std::string> *vals);
+template std::string HUAJISCRIPTBASE::Numerical_Operation_Templated_Helper<double>(const std::string&, int, int, int, const std::vector<std::string> *vals);
 
-std::string HUAJISCRIPTBASE::Numerical_Operation(const std::string &op, const std::vector<std::string> *vals) {
+std::string HUAJISCRIPTBASE::Numerical_Operation(const std::string& op, int op_key, const std::vector<std::string> *vals) {
     int vals_size = vals->size();
     // we allow vals to be empty in some cases, but none of numerical operation can have no vals
     if(!vals_size) {
@@ -1256,12 +1254,12 @@ std::string HUAJISCRIPTBASE::Numerical_Operation(const std::string &op, const st
                 As it is impossible for compiler to deduce which version of template to use,
                 we need to explicitly specify template type
             */
-            ans_val = Numerical_Operation_Templated_Helper<double>(op, vals_size, TYPE_DOUBLE, vals);
+            ans_val = Numerical_Operation_Templated_Helper<double>(op, op_key, vals_size, TYPE_DOUBLE, vals);
             return ans_val;
         }
     }
     // explicitly specify using long template
-    ans_val = Numerical_Operation_Templated_Helper<long>(op, vals_size, TYPE_LONG, vals);
+    ans_val = Numerical_Operation_Templated_Helper<long>(op, op_key, vals_size, TYPE_LONG, vals);
     return ans_val;
 }
 
@@ -1269,13 +1267,11 @@ std::string HUAJISCRIPTBASE::More_On_Slice_Operator_Level_1(const std::vector<st
     throw huaji_except;
 }
 
-std::string HUAJISCRIPTBASE::Other_Basic_Operation(const std::string &op, const std::vector<std::string> *vals) {
+std::string HUAJISCRIPTBASE::Other_Basic_Operation(const std::string& op, int op_key, const std::vector<std::string> *vals) {
     if(!vals->size()) {
         Signal_Error(SE_ARITY_MISMATCH, op);
         throw syntax_except;
     }
-    // Previously we checked if op is in OTHER_BASIC_OPERATORS
-    int op_key = OTHER_BASIC_OPERATORS.at(op);
     try {
         switch (op_key) {
             case eOP_AND: {
@@ -1381,26 +1377,28 @@ std::string HUAJISCRIPTBASE::Other_Basic_Operation(const std::string &op, const 
     throw huaji_except;
 }
 
-std::string HUAJISCRIPTBASE::More_On_Expression_Level_1(const std::string &op, const std::vector<std::string> *vals) {
+std::string HUAJISCRIPTBASE::More_On_Expression_Level_1(const std::string& op, const std::vector<std::string> *vals) {
     Signal_Error(SE_UNABLE_TO_PROCESS_EXPR, op);
     throw eval_except;
 }
 
-std::string HUAJISCRIPTBASE::Basic_Operation(const std::string &op, const std::vector<std::string> *vals) {
-    std::string ans_val;
+std::string HUAJISCRIPTBASE::Basic_Operation(const std::string& op, const std::vector<std::string> *vals) {
     try {
-        if (NUMERICAL_OPERATORS.find(op)!=NUMERICAL_OPERATORS.end()) {
-            ans_val = Numerical_Operation(op, vals);
+        std::map<std::string, int>::const_iterator op_key_it = NUMERICAL_OPERATORS.find(op);
+        // Numerical_operators
+        if(op_key_it!=NUMERICAL_OPERATORS.end()) {
+            return Numerical_Operation(op, op_key_it->second, vals);
         }
         // Other basic operations
-        else if (OTHER_BASIC_OPERATORS.find(op)!=OTHER_BASIC_OPERATORS.end()) {
-            ans_val = Other_Basic_Operation(op, vals);
+        op_key_it = OTHER_BASIC_OPERATORS.find(op);
+        if(op_key_it!=OTHER_BASIC_OPERATORS.end()) {
+            return Other_Basic_Operation(op, op_key_it->second, vals);
         }
         else {
-            ans_val = More_On_Expression_Level_1(op, vals);
+            return More_On_Expression_Level_1(op, vals);
         }
     }
-    catch (const HUAJIBASE_EXCEPTION& hj_base_except) {
+    catch (const HUAJIBASE_EXCEPTION &hj_base_except) {
         throw hj_base_except;
     }
     // catch all exceptions
@@ -1408,14 +1406,13 @@ std::string HUAJISCRIPTBASE::Basic_Operation(const std::string &op, const std::v
         Signal_Error(IE_UNKNOWN, vals);
         throw huaji_except;
     }
-    return ans_val;
 }
 
-std::string HUAJISCRIPTBASE::More_On_Names_Query_Level_1(const std::string &name) {
+std::string HUAJISCRIPTBASE::More_On_Names_Query_Level_1(const std::string& name) {
     throw name_except;
 }
 
-std::string HUAJISCRIPTBASE::Handle_Val(const std::string &name_or_val) {
+std::string HUAJISCRIPTBASE::Handle_Val(const std::string& name_or_val) {
     if(enable_raw_string) {
         if(name_or_val.size()>1) {
             if(name_or_val.front()=='$'&&name_or_val.back()=='$') {

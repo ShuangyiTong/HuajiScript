@@ -13,9 +13,9 @@
 
 namespace hjbase_ufunc {
 
-    void Signal_Error(const std::string &error_msg, const std::vector<std::string> *error_part);
+    void Signal_Error(const std::string& error_msg, const std::vector<std::string> *error_part);
 
-    void Signal_Error(const std::string &error_msg, const std::string &error_part);
+    void Signal_Error(const std::string& error_msg, const std::string& error_part);
 
     void Print_Vector_String(const std::vector<std::string> *vector_string);
 
@@ -23,9 +23,9 @@ namespace hjbase_ufunc {
 
     bool Check_If_Float_Point(const std::vector<std::string> *vals);
 
-    bool Starts_With(const std::string &this_str, const std::string &start_str);
+    bool Starts_With(const std::string& this_str, const std::string& start_str);
 
-    bool Is_Numerical(const std::string &this_str);
+    bool Is_Numerical(const std::string& this_str);
 
 }
 
@@ -69,6 +69,26 @@ namespace hjbase_except {
 }
 
 namespace hjbase_class {
+
+    /*  
+        class with const pointer based on std::vector<std::string>, 
+        increasing performance by just passing a pointer and two iterators
+        instead of using new std::vector<std::string>(start_it, end_it);
+        without changing interfaces like begin(), end()
+    */
+    class const_pVecStr {
+        public:
+
+            const_pVecStr(const std::vector<std::string> *container, std::vector<std::string>::const_iterator this_begin,std::vector<std::string>::const_iterator this_end);
+            ~const_pVecStr();
+
+            std::vector<std::string>::const_iterator begin();
+            std::vector<std::string>::const_iterator end();
+
+        private:
+            const std::vector<std::string> *container;
+    };
+
     class HUAJITOKENIZER {
         public:
 
@@ -106,9 +126,9 @@ namespace hjbase_class {
 
             virtual int More_On_Command_Level_1(const std::vector<std::string> *command_to_be_exectued);
 
-            virtual std::string More_On_Expression_Level_1(const std::string &op, const std::vector<std::string> *vals);
+            virtual std::string More_On_Expression_Level_1(const std::string& op, const std::vector<std::string> *vals);
 
-            virtual std::string More_On_Names_Query_Level_1(const std::string &name);
+            virtual std::string More_On_Names_Query_Level_1(const std::string& name);
 
             virtual std::string More_On_Slice_Operator_Level_1(const std::vector<std::string> *vals);
 
@@ -120,11 +140,11 @@ namespace hjbase_class {
 
             void Block_Execution(const std::vector<std::string> *commands_block);
 
-            void Declare_Name(const std::string &name, const std::string &val, std::map<std::string, std::string> *target_scope_names);
+            void Declare_Name(const std::string& name, const std::string& val, std::map<std::string, std::string> *target_scope_names);
 
-            void Mutate_Name(const std::string &name, const std::string &val, std::map<std::string, std::string> *target_scope_names);
+            void Mutate_Name(const std::string& name, const std::string& val, std::map<std::string, std::string> *target_scope_names);
 
-            std::string Resolve_Name(const std::string &name, const std::map<std::string, std::string> *target_scope_names);
+            std::string Resolve_Name(const std::string& name, const std::map<std::string, std::string> *target_scope_names);
 
             void Cleanup_If_Exception_Thrown();
         
@@ -134,25 +154,25 @@ namespace hjbase_class {
                 feels easier to me
             */
             template <typename T>
-            std::string Numerical_Operation_Templated_Helper(const std::string &op, int vals_size, int T_name, const std::vector<std::string> *vals);
+            std::string Numerical_Operation_Templated_Helper(const std::string& op, int op_key, int vals_size, int T_name, const std::vector<std::string> *vals);
 
-            std::string Numerical_Operation(const std::string &op, const std::vector<std::string> *vals);
+            std::string Numerical_Operation(const std::string& op, int op_key, const std::vector<std::string> *vals);
 
-            std::string Handle_Val(const std::string &name_or_val);
+            std::string Handle_Val(const std::string& name_or_val);
 
             void Print_Name_Map(const std::map<std::string, std::string> *names_map);
 
-            std::string Other_Basic_Operation(const std::string &op, const std::vector<std::string> *vals);
+            std::string Other_Basic_Operation(const std::string& op, int op_key, const std::vector<std::string> *vals);
             
-            std::string Basic_Operation(const std::string &op, const std::vector<std::string> *vals);
+            std::string Basic_Operation(const std::string& op, const std::vector<std::string> *vals);
 
-            void Print_Debug_Info(const std::string &info, int ast_depth_change, const std::vector<std::string> *node);
+            void Print_Debug_Info(const std::string& info, int ast_depth_change, const std::vector<std::string> *node);
 
-            void Print_Debug_Info(const std::string &info, int ast_depth_change, const std::string &node);
+            void Print_Debug_Info(const std::string& info, int ast_depth_change, const std::string& node);
 
             std::string Indent_By_AST_Depth();
 
-            int Collect_Tokens(const std::string &token);
+            int Collect_Tokens(const std::string& token);
 
             /*
                 Arguments:
@@ -161,7 +181,7 @@ namespace hjbase_class {
                         will be mutated (cleared) if command is completed and executed.
                 Return code is same as Fake_Tokenizer
             */
-            int Take_One_Token(const std::string &token, std::vector<std::string> *command);
+            int Take_One_Token(const std::string& token, std::vector<std::string> *command);
 
             int Huaji_Command_Interpreter(const std::vector<std::string> *command_to_be_exectued);
 

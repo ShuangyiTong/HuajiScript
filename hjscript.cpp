@@ -1,50 +1,62 @@
 #include "hjscript.hpp"
 
-using namespace hjbase_cnt::keywords;
-using namespace hjbase_cnt::operators;
-using namespace hjbase_cnt::common_msgs;
-using namespace hjbase_cnt::miscellaneous;
-using namespace hjbase_cnt::commands_names;
-using namespace hjbase_cnt::type_tag;
-using namespace hjbase_ufunc;
-using namespace hjbase_except;
-using namespace hjbase_class;
+#define INTERNAL_ERROR_RETURN_CODE 1
+#define SUCCESSFULLY_EXECUTED_RETURN_CODE 0
+#define REQUIRE_MORE_TOKENS_RETURN_CODE -1
 
+#define REQUIRE_MORE_TOKENS_FOR_COMPLETE_COMMAND_RETURN_CODE 0
+#define COMMAND_COMPLETED_RETURN_CODE 1
 
-void hjbase_ufunc::Print_Vector_String(const std::vector<std::string> *vector_string) {
-    for(std::vector<std::string>::const_iterator it=vector_string->begin();it!=vector_string->end();++it) {
+#define TYPE_DOUBLE 0
+#define TYPE_LONG 1
+
+#define INCREASE_AST_DEPTH 1
+#define DECREASE_AST_DEPTH -1
+#define AST_DEPTH_UNCHANGED 0
+
+using namespace hjbase::cnt::keywords;
+using namespace hjbase::cnt::operators;
+using namespace hjbase::cnt::common_msgs;
+using namespace hjbase::cnt::miscellaneous;
+using namespace hjbase::cnt::commands_names;
+using namespace hjbase::cnt::type_tag;
+using namespace hjbase::ufunc;
+using namespace hjbase::except;
+
+void hjbase::ufunc::Print_IVSTR(const const_itVecStr* iVstr) {
+    for(std::vector<std::string>::const_iterator it=iVstr->begin();it!=iVstr->end();++it) {
         std::cout<<*it<<" ";
     }
     std::cout<<std::endl;
 }
 
-void hjbase_ufunc::Highlight_Error_Part(const std::vector<std::string> *vector_string) {
-    for(std::vector<std::string>::const_iterator it=vector_string->begin();it!=vector_string->end();++it) {
-        std::cout<<std::string((*it).size(), '~');
+void hjbase::ufunc::Highlight_Error_Part(const const_itVecStr* iVstr) {
+    for(std::vector<std::string>::const_iterator it=iVstr->begin();it!=iVstr->end();++it) {
+        std::cout<<std::string((*it).size(), '~')<<" ";
     }
     std::cout<<std::endl;
 }
 
-void hjbase_ufunc::Signal_Error(const std::string& error_msg, const std::vector<std::string> *error_part) {
+void hjbase::ufunc::Signal_Error(const std::string& error_msg, const const_itVecStr* error_part) {
     std::cerr<<error_msg<<std::endl;
     std::cout<<"    ";
-    Print_Vector_String(error_part);
+    Print_IVSTR(error_part);
     std::cout<<"    ";
     Highlight_Error_Part(error_part);
 }
 
-void hjbase_ufunc::Signal_Error(const std::string& error_msg, const std::string& error_part) {
+void hjbase::ufunc::Signal_Error(const std::string& error_msg, const std::string& error_part) {
     std::cerr<<error_msg<<std::endl;
     std::cout<<"    "<<error_part<<std::endl;
 }
 
-bool hjbase_ufunc::Check_If_Float_Point(const std::vector<std::string> *vals) {
+bool hjbase::ufunc::Check_If_Float_Point(const const_itVecStr* vals) {
     // iterate over vals vector
     for(std::vector<std::string>::const_iterator it=vals->begin();it!=vals->end();++it) {
         /* 
-            just try to find dot to determine if it is a float number or not,
+            just try to find a dot to determine if it is a float number or not,
             note this is not enough to make sure it is a valid numerical value.
-            But we will not check it here, as finally std::stod will throw exception if it is not.
+            But we will not check it here.
         */
         std::size_t found = (*it).find_first_of('.');
         if(found!=std::string::npos) {
@@ -56,14 +68,14 @@ bool hjbase_ufunc::Check_If_Float_Point(const std::vector<std::string> *vals) {
     return false;
 }
 
-inline bool hjbase_ufunc::Starts_With(const std::string& this_str, const std::string& start_str) {
+inline bool hjbase::ufunc::Starts_With(const std::string& this_str, const std::string& start_str) {
     if(this_str.substr(0,start_str.size())==start_str) {
         return true;
     }
     return false;
 }
 
-inline bool hjbase_ufunc::Is_Numerical(const std::string& this_str) {
+inline bool hjbase::ufunc::Is_Numerical(const std::string& this_str) {
     for(std::string::const_iterator it=this_str.begin();it!=this_str.end();++it) {
         if(!isdigit(*it)&&(*it)!='.') {
             return false;
@@ -72,7 +84,44 @@ inline bool hjbase_ufunc::Is_Numerical(const std::string& this_str) {
     return true;
 }
 
-HUAJITOKENIZER::HUAJITOKENIZER(std::string file_name) 
+const_itVecStr::const_itVecStr(std::vector<std::string>::const_iterator from_begin, std::vector<std::string>::const_iterator from_end)
+    : this_begin (from_begin)
+    , this_end (from_end) {
+    #ifdef pVecStr_RANGE_SAFETY_CHECK
+        if(this_begin>this_end) {
+            Signal_Error(IE_CONST_PVECSTR_OOR, std::string());
+            throw huaji_except;
+        }
+    #endif
+}
+
+const_itVecStr::~const_itVecStr() {}
+
+std::vector<std::string>::const_iterator const_itVecStr::begin() const {
+    return this_begin;
+}
+
+std::vector<std::string>::const_iterator const_itVecStr::end() const {
+    return this_end;
+}
+
+std::string const_itVecStr::front() const {
+    return *(this_begin);
+}
+
+std::string const_itVecStr::back() const {
+    return *(this_end-1);
+}
+
+std::string const_itVecStr::at(int pos) const {
+    return *(this_begin+pos);
+}
+
+int const_itVecStr::size() const {
+    return  this_end-this_begin;
+}
+
+hjbase::HUAJITOKENIZER::HUAJITOKENIZER(std::string file_name) 
     : is_cin (false)
     , is_in_quotation (false)
     , is_in_block_comment (false)
@@ -84,7 +133,7 @@ HUAJITOKENIZER::HUAJITOKENIZER(std::string file_name)
     token_queue = new std::queue<std::string>;
 }
 
-HUAJITOKENIZER::HUAJITOKENIZER() 
+hjbase::HUAJITOKENIZER::HUAJITOKENIZER() 
     : is_cin (true)
     , is_in_quotation (false)
     , is_in_block_comment (false)
@@ -96,14 +145,14 @@ HUAJITOKENIZER::HUAJITOKENIZER()
     token_queue = new std::queue<std::string>;
 }
 
-HUAJITOKENIZER::~HUAJITOKENIZER() {
+hjbase::HUAJITOKENIZER::~HUAJITOKENIZER() {
     if(!is_cin) {
         delete source;
     }
     delete token_queue;
 }
 
-std::string HUAJITOKENIZER::Get_One_Token() {
+std::string hjbase::HUAJITOKENIZER::Get_One_Token() {
     std::string token;
     if(token_queue->size()) {
         token = token_queue->front();
@@ -130,6 +179,7 @@ std::string HUAJITOKENIZER::Get_One_Token() {
                         return token.insert(0, STRING_TAG);
                     }
                 }
+                // characters substitution
                 else if(cur_char=='\\') {
                     char next_char = source->get();
                     switch (next_char) {
@@ -153,6 +203,7 @@ std::string HUAJITOKENIZER::Get_One_Token() {
                     token.push_back(cur_char);
                 }
             }
+            // in no substitution block
             else if(is_in_nosubst) {
                 if(cur_char==NOSUBST) {
                     is_in_nosubst = false;
@@ -167,6 +218,7 @@ std::string HUAJITOKENIZER::Get_One_Token() {
                     }
                 }
             }
+            // inline comment, exit comment mode if a endline char found
             else if(is_in_line_comment) {
                 if(cur_char=='\n') {
                     is_in_line_comment = false;
@@ -349,8 +401,9 @@ std::string HUAJITOKENIZER::Get_One_Token() {
     }
 }
 
-HUAJISCRIPTBASE::HUAJISCRIPTBASE(std::string file_name) 
+hjbase::HUAJISCRIPTBASE::HUAJISCRIPTBASE(std::string file_name) 
     : collect_status (0)
+    , collect_length (0)
     , enable_float_point (true)
     , enable_debug_mode (false)
     , current_ast_depth (0)
@@ -360,8 +413,9 @@ HUAJISCRIPTBASE::HUAJISCRIPTBASE(std::string file_name)
     tokenizer = new HUAJITOKENIZER(file_name);
 }
 
-HUAJISCRIPTBASE::HUAJISCRIPTBASE() 
+hjbase::HUAJISCRIPTBASE::HUAJISCRIPTBASE() 
     : collect_status (0)
+    , collect_length (0)
     , enable_float_point (true)
     , enable_debug_mode (false)
     , current_ast_depth (0)
@@ -371,22 +425,22 @@ HUAJISCRIPTBASE::HUAJISCRIPTBASE()
     tokenizer = new HUAJITOKENIZER();
 }
 
-HUAJISCRIPTBASE::~HUAJISCRIPTBASE() {
+hjbase::HUAJISCRIPTBASE::~HUAJISCRIPTBASE() {
     delete names;
     delete tokenizer;
 }
 
-void HUAJISCRIPTBASE::Cleanup_If_Exception_Thrown() {
+void hjbase::HUAJISCRIPTBASE::Cleanup_If_Exception_Thrown() {
     current_ast_depth = 0;
     More_Cleanup_Level_1();
     return;
 }
 
-void HUAJISCRIPTBASE::More_Cleanup_Level_1() {
+void hjbase::HUAJISCRIPTBASE::More_Cleanup_Level_1() {
     return;
 }
 
-std::string HUAJISCRIPTBASE::Indent_By_AST_Depth() {
+std::string hjbase::HUAJISCRIPTBASE::Indent_By_AST_Depth() {
     if(current_ast_depth>=0) {
         std::string indent;
         for(int i=0;i<current_ast_depth;++i) {
@@ -401,20 +455,20 @@ std::string HUAJISCRIPTBASE::Indent_By_AST_Depth() {
     return std::string();
 }
 
-void HUAJISCRIPTBASE::Print_Debug_Info(const std::string& info, int ast_depth_change, const std::vector<std::string> *node) {
+void hjbase::HUAJISCRIPTBASE::Print_Debug_Info(const std::string& info, int ast_depth_change, const const_itVecStr* node) {
     if(enable_debug_mode) {
         if(ast_depth_change<0) {
             current_ast_depth += ast_depth_change;
         }
         std::cout<<Indent_By_AST_Depth()<<info;
-        Print_Vector_String(node);
+        Print_IVSTR(node);
         if(ast_depth_change>0) {
             current_ast_depth += ast_depth_change;
         }
     }
 }
 
-void HUAJISCRIPTBASE::Print_Debug_Info(const std::string& info, int ast_depth_change, const std::string& node) {
+void hjbase::HUAJISCRIPTBASE::Print_Debug_Info(const std::string& info, int ast_depth_change, const std::string& node) {
     if(enable_debug_mode) {
         if(ast_depth_change<0) {
             current_ast_depth += ast_depth_change;
@@ -426,7 +480,7 @@ void HUAJISCRIPTBASE::Print_Debug_Info(const std::string& info, int ast_depth_ch
     }
 }
 
-void HUAJISCRIPTBASE::Print_Name_Map(const std::map<std::string, std::string> *names_map) {
+void hjbase::HUAJISCRIPTBASE::Print_Name_Map(const std::map<std::string, std::string>* names_map) {
     // Table Head
     std::cout<<HORIZONTAL_LINE<<std::endl;
     std::cout<<VERTICAL_LINE_WITH_SPACE_AFTER<<NAME_THEADER<<VERTICAL_LINE_WITH_SPACE_BOTH<<VAL_THEADER<<VERTICAL_LINE_WITH_SPACE_BEFORE<<std::endl;
@@ -438,7 +492,7 @@ void HUAJISCRIPTBASE::Print_Name_Map(const std::map<std::string, std::string> *n
     }
 }
 
-int HUAJISCRIPTBASE::Collect_Tokens(const std::string& token) {
+int hjbase::HUAJISCRIPTBASE::Collect_Tokens(const std::string& token) {
 
     // Increase collect_status by 1 as it is an left brace
     if(token==BLOCK_START) {
@@ -484,19 +538,23 @@ int HUAJISCRIPTBASE::Collect_Tokens(const std::string& token) {
     }
 }
 
-int HUAJISCRIPTBASE::Take_One_Token(const std::string& token, std::vector<std::string> *command) {
+int hjbase::HUAJISCRIPTBASE::Take_One_Token(std::vector<std::string>::const_iterator token_it) {
 
-    command->push_back(token);
+    ++collect_length;
 
-    int command_complete = Collect_Tokens(token);
+    int command_complete = Collect_Tokens(*token_it);
 
     if(command_complete) {
 
-        // Command complete, send for execution
-        int execution_status = Huaji_Command_Interpreter(command);
+        const_itVecStr* cmd = new const_itVecStr(token_it-collect_length+1, token_it+1);
 
-        // Clear command vector string for later execution
-        command->clear();
+        // Reset collect_length, and start_it will be set to new start as well.
+        collect_length = 0;
+
+        // Build const_itVecStr object for execution
+        int execution_status = Huaji_Command_Interpreter(cmd);
+
+        delete cmd;
 
         // Return status
         if(execution_status==INVALID_COMMAND_RETURN_CODE) {
@@ -511,8 +569,8 @@ int HUAJISCRIPTBASE::Take_One_Token(const std::string& token, std::vector<std::s
     }
 }
 
-void HUAJISCRIPTBASE::Entry_Point() {
-    std::vector<std::string> *command = new std::vector<std::string>;
+void hjbase::HUAJISCRIPTBASE::Entry_Point() {
+    std::vector<std::string>* command = new std::vector<std::string>;
     std::string token;
     if(is_console) {
         std::cout<<CONSOLE_INFO_STRING<<std::endl;
@@ -520,12 +578,17 @@ void HUAJISCRIPTBASE::Entry_Point() {
         while(1) {
             try {
                 token = tokenizer->Get_One_Token();
+                command->push_back(token);
             }
-            catch (const TOKEN_EXCEPTION &token_except) {
+            catch (const TOKEN_EXCEPTION& token_except) {    
+                if (collect_length!=0) {
+                    Signal_Error(SE_REQUIRE_MORE_TOKENS, token);
+                }
                 delete command;
                 return;
             }
-            if(Take_One_Token(token, command)!=REQUIRE_MORE_TOKENS_RETURN_CODE) {
+            if(Take_One_Token(command->end()-1)!=REQUIRE_MORE_TOKENS_RETURN_CODE) {
+                command->clear();
                 std::cout<<COMMAND_LINE_PROMPT;
             }
         }
@@ -534,17 +597,23 @@ void HUAJISCRIPTBASE::Entry_Point() {
         while(1) {
             try {
                 token = tokenizer->Get_One_Token();
+                command->push_back(token);
             }
-            catch (const TOKEN_EXCEPTION &token_except) {
+            catch (const TOKEN_EXCEPTION& token_except) {                
+                if (collect_length!=0) {
+                    Signal_Error(SE_REQUIRE_MORE_TOKENS, token);
+                }
                 delete command;
                 return;
             }
-            Take_One_Token(token, command);
+            if(Take_One_Token(command->end()-1)!=REQUIRE_MORE_TOKENS_RETURN_CODE) {
+                command->clear();
+            }
         }
     }
 }
 
-void HUAJISCRIPTBASE::Declare_Name(const std::string& name, const std::string& val, std::map<std::string, std::string> *target_scope_names) {
+void hjbase::HUAJISCRIPTBASE::Declare_Name(const std::string& name, const std::string& val, std::map<std::string, std::string> *target_scope_names) {
     // insert return a std::pair, with second element specifying if successfully inserted.
     if((target_scope_names->insert(std::pair<std::string, std::string>(name, val))).second==false) {
         Signal_Error(NAE_REDECLARE, name);
@@ -553,20 +622,22 @@ void HUAJISCRIPTBASE::Declare_Name(const std::string& name, const std::string& v
     return;
 }
 
-void HUAJISCRIPTBASE::Mutate_Name(const std::string& name, const std::string& val, std::map<std::string, std::string> *target_scope_names) {
-    try {
-        target_scope_names->at(name);
+void hjbase::HUAJISCRIPTBASE::Mutate_Name(const std::string& name, const std::string& val, std::map<std::string, std::string> *target_scope_names) {
+    // Get the iterator pointing to name
+    std::map<std::string, std::string>::iterator res_it = target_scope_names->find(name);
+    // Check if name is in the map, if not res_it will be std::map::end()
+    if(res_it!=target_scope_names->end()) {
+        res_it->second = val;
     }
-    catch (const std::out_of_range& oor) {
+    else {
+        // Mutate a name that is not declared is forbidden
         Signal_Error(NAE_UNDEFINED, name);
         throw name_except;
     }
-
-    (*target_scope_names)[name] = val;
     return;
 }
 
-std::string HUAJISCRIPTBASE::Resolve_Name(const std::string& name, const std::map<std::string, std::string> *target_scope_names) {
+std::string hjbase::HUAJISCRIPTBASE::Resolve_Name(const std::string& name, const std::map<std::string, std::string> *target_scope_names) {
     std::string val;
     try {
         val = target_scope_names->at(name);
@@ -578,11 +649,11 @@ std::string HUAJISCRIPTBASE::Resolve_Name(const std::string& name, const std::ma
     return val;
 }
 
-void HUAJISCRIPTBASE::Block_Execution(const std::vector<std::string> *commands_block) {
+void hjbase::HUAJISCRIPTBASE::Block_Execution(const const_itVecStr* commands_block) {
 
     int start_exec_pos = 0;
 
-    // Find execution position, where the first { appears
+    // Find execution position, where the first BLOCK_START appears
     for(std::vector<std::string>::const_iterator it=commands_block->begin()+1;it!=commands_block->end()-1;++it) {
         if(*it==BLOCK_START) {
             start_exec_pos = it-commands_block->begin();
@@ -593,37 +664,34 @@ void HUAJISCRIPTBASE::Block_Execution(const std::vector<std::string> *commands_b
     if(!start_exec_pos) {
         return;
     }
-    
-    // This is very slow, but I didn't write a parser, so let's leave it for now.
-    std::vector<std::string> *command = new std::vector<std::string>;
 
     /*
-        We already know currently collect_status = 0, 
-        so use Take_One_Token here won't cause any problem.
+        We already know currently collect_status = collect_length = 0, 
+        so use a nested Take_One_Token here won't cause problems.
         check for end block token is ignored, as we iterate to end()-1
     */
     for(std::vector<std::string>::const_iterator it=commands_block->begin()+start_exec_pos+1;it!=commands_block->end()-1;++it) {
-        Take_One_Token(*it,command);
+        Take_One_Token(it);
     }
-    delete command;
 
-    // force reset collect_status, it is possible to have positive collect status
-    if (collect_status!=0) {
+    // force reset collect_length, it is possible to have positive collect_length
+    if (collect_length!=0) {
         Signal_Error(SE_REQUIRE_MORE_TOKENS, commands_block);
+        collect_length = 0;
         collect_status = 0;
     }
 }
 
-bool HUAJISCRIPTBASE::Find_And_Evaluate_Condition(const std::vector<std::string> *commands_block) {        
+bool hjbase::HUAJISCRIPTBASE::Find_And_Evaluate_Condition(const const_itVecStr* commands_block) {        
     /* 
         Find first block start token, send it for evlauation
         Notice here we also don't check expression tokens,
         as we iterate from begin() + 2 (first one must be a command name)
     */
-    std::vector<std::string> *expr=nullptr;
+    const_itVecStr* expr = nullptr;
     for(std::vector<std::string>::const_iterator it=commands_block->begin()+2;it!=commands_block->end()-1;++it) {
         if(*it==BLOCK_START) {
-            expr = new std::vector<std::string>(commands_block->begin()+1, it);
+            expr = new const_itVecStr(commands_block->begin()+1, it);
             break;
         }
     }
@@ -638,16 +706,16 @@ bool HUAJISCRIPTBASE::Find_And_Evaluate_Condition(const std::vector<std::string>
     try {
         val = Evaluate_Expression(expr);
     }
-    catch (const HUAJIBASE_EXCEPTION& hj_base_except){
+    catch (const HUAJIBASE_EXCEPTION& huaji_except){
         // cleanup
         delete expr;
         // throw again
-        throw hj_base_except;
+        throw huaji_except;
     }
 
     delete expr;
 
-    if(val!="0") {
+    if(val!=BOOL_FALSE) {
         return true;
     }
 
@@ -655,7 +723,7 @@ bool HUAJISCRIPTBASE::Find_And_Evaluate_Condition(const std::vector<std::string>
 
 }
 
-int HUAJISCRIPTBASE::Huaji_Command_Interpreter(const std::vector<std::string> *command_to_be_executed) {
+int hjbase::HUAJISCRIPTBASE::Huaji_Command_Interpreter(const const_itVecStr* command_to_be_executed) {
 
     Print_Debug_Info(DEB_COMMAND_START, INCREASE_AST_DEPTH, command_to_be_executed);
 
@@ -664,11 +732,12 @@ int HUAJISCRIPTBASE::Huaji_Command_Interpreter(const std::vector<std::string> *c
         return VALID_COMMAND_RETURN_CODE;
     }
 
-    std::string command = command_to_be_executed->front();
+    std::string command = command_to_be_executed->at(0);
 
+    std::map<std::string, int>::const_iterator cmd_key_it = HJBASE_CMD_SEARCH_TREE.find(command);
     int cmd_key;
-    if(HJBASE_CMD_SEARCH_TREE.find(command)!=HJBASE_CMD_SEARCH_TREE.end()) {
-        cmd_key = HJBASE_CMD_SEARCH_TREE.at(command);
+    if(cmd_key_it!=HJBASE_CMD_SEARCH_TREE.end()) {
+        cmd_key = cmd_key_it->second;
     }
     else {
         return More_On_Command_Level_1(command_to_be_executed);
@@ -687,7 +756,7 @@ int HUAJISCRIPTBASE::Huaji_Command_Interpreter(const std::vector<std::string> *c
             std::string name = command_to_be_executed->at(1);
             int declared = 0;
 
-            std::vector<std::string> *expr = nullptr;
+            const_itVecStr* expr = nullptr;
             std::string val;
 
             try {
@@ -719,11 +788,11 @@ int HUAJISCRIPTBASE::Huaji_Command_Interpreter(const std::vector<std::string> *c
                             --it;
                         }
                         /* 
-                            Create new ast node by allocate new string object
+                            Create new ast node by allocate new const_itVecStr object
                             evaluate and free memory, if exception thrown in evaluation
                             expcetion will be caught and memory will be freed
                         */
-                        expr = new std::vector<std::string>(expr_begin_it, expr_end_it);
+                        expr = new const_itVecStr(expr_begin_it, expr_end_it);
                         val = Evaluate_Expression(expr);
                         delete expr;
                         expr = nullptr;
@@ -756,7 +825,7 @@ int HUAJISCRIPTBASE::Huaji_Command_Interpreter(const std::vector<std::string> *c
                     Declare_Name(name, INITIAL_VALUE, names);
                 }
             }
-            catch (const HUAJIBASE_EXCEPTION& hj_base_except){
+            catch (const HUAJIBASE_EXCEPTION& huaji_except){
                 if(expr) {
                     delete expr;
                 }
@@ -778,22 +847,18 @@ int HUAJISCRIPTBASE::Huaji_Command_Interpreter(const std::vector<std::string> *c
                 return VALID_COMMAND_RETURN_CODE;
             }
             std::string name = command_to_be_executed->at(1);
-            std::vector<std::string> *expr = new std::vector<std::string>(command_to_be_executed->begin()+3, command_to_be_executed->end()-1);
+            const_itVecStr* expr = new const_itVecStr(command_to_be_executed->begin()+3, command_to_be_executed->end()-1);
             std::string val;
             try {
                 val = Evaluate_Expression(expr);
                 Mutate_Name(name, val, names);
             }
-            catch (const HUAJIBASE_EXCEPTION& hj_base_except){
-                if(expr) {
-                    delete expr;
-                }
+            catch (const HUAJIBASE_EXCEPTION& huaji_except){
+                delete expr;
                 Cleanup_If_Exception_Thrown();
                 return VALID_COMMAND_RETURN_CODE;
             }
-            if(expr) {
-                delete expr;
-            }
+            delete expr;
             break;
         }
 
@@ -805,14 +870,12 @@ int HUAJISCRIPTBASE::Huaji_Command_Interpreter(const std::vector<std::string> *c
                     nl_flag = false;
                 }
                 else if((*it)==USE_EXPR_FROM_HERE&&it!=command_to_be_executed->end()-2) {
-                    std::vector<std::string> *expr = new std::vector<std::string>(it+1,command_to_be_executed->end()-1);
+                    const_itVecStr* expr = new const_itVecStr(it+1,command_to_be_executed->end()-1);
                     try {
                         std::cout<<Evaluate_Expression(expr);
                     }
-                    catch (const HUAJIBASE_EXCEPTION& hj_base_except) {
-                        if(expr) {
-                            delete expr;
-                        }
+                    catch (const HUAJIBASE_EXCEPTION& huaji_except) {
+                        delete expr;
                         Cleanup_If_Exception_Thrown();
                         return VALID_COMMAND_RETURN_CODE;
                     }
@@ -823,7 +886,7 @@ int HUAJISCRIPTBASE::Huaji_Command_Interpreter(const std::vector<std::string> *c
                     try {
                         std::cout<<Handle_Val(*it);
                     }
-                    catch (const HUAJIBASE_EXCEPTION& hj_base_except) {                
+                    catch (const HUAJIBASE_EXCEPTION& huaji_except) {                
                         Cleanup_If_Exception_Thrown();
                         return VALID_COMMAND_RETURN_CODE;
                     }
@@ -843,7 +906,7 @@ int HUAJISCRIPTBASE::Huaji_Command_Interpreter(const std::vector<std::string> *c
             try {
                 condition = Find_And_Evaluate_Condition(command_to_be_executed);
             }
-            catch (const HUAJIBASE_EXCEPTION& hj_base_except){
+            catch (const HUAJIBASE_EXCEPTION& huaji_except){
                 Cleanup_If_Exception_Thrown();
                 return VALID_COMMAND_RETURN_CODE;
             }
@@ -862,7 +925,7 @@ int HUAJISCRIPTBASE::Huaji_Command_Interpreter(const std::vector<std::string> *c
             try {
                 condition = Find_And_Evaluate_Condition(command_to_be_executed);
             }
-            catch (const HUAJIBASE_EXCEPTION& hj_base_except){
+            catch (const HUAJIBASE_EXCEPTION& huaji_except){
                 Cleanup_If_Exception_Thrown();
                 return VALID_COMMAND_RETURN_CODE;
             }
@@ -872,7 +935,7 @@ int HUAJISCRIPTBASE::Huaji_Command_Interpreter(const std::vector<std::string> *c
                 try {
                     condition = Find_And_Evaluate_Condition(command_to_be_executed);
                 }
-                catch (const HUAJIBASE_EXCEPTION& hj_base_except){
+                catch (const HUAJIBASE_EXCEPTION& huaji_except){
                     Cleanup_If_Exception_Thrown();
                     return VALID_COMMAND_RETURN_CODE;
                 }
@@ -932,12 +995,12 @@ int HUAJISCRIPTBASE::Huaji_Command_Interpreter(const std::vector<std::string> *c
     return VALID_COMMAND_RETURN_CODE;
 }
 
-int HUAJISCRIPTBASE::More_On_Command_Level_1(const std::vector<std::string> *command_to_be_executed) {
+int hjbase::HUAJISCRIPTBASE::More_On_Command_Level_1(const const_itVecStr* command_to_be_executed) {
     Signal_Error(IE_UNDEFINED_NAME, command_to_be_executed);
     return INVALID_COMMAND_RETURN_CODE;
 }
 
-std::string HUAJISCRIPTBASE::Evaluate_Expression(const std::vector<std::string> *expr) {
+std::string hjbase::HUAJISCRIPTBASE::Evaluate_Expression(const_itVecStr* expr) {
 
     Print_Debug_Info(DEB_EXPR_START, INCREASE_AST_DEPTH, expr);
     
@@ -949,7 +1012,7 @@ std::string HUAJISCRIPTBASE::Evaluate_Expression(const std::vector<std::string> 
     }
 
     else if(expr->size()==1) {
-        ans_val = Handle_Val((*expr)[0]);
+        ans_val = Handle_Val(expr->at(0));
     }
 
     else {
@@ -964,13 +1027,13 @@ std::string HUAJISCRIPTBASE::Evaluate_Expression(const std::vector<std::string> 
             After above checks, the expression must be expr = EXPR_START op expr ... EXPR_END
             Detect operator
         */
-        std::string op = (*expr)[1];
+        std::string op = expr->at(1);
 
         /* 
             Start to wrap arguments and record position in the following vectors.
-            The positions are stored in ordered pairs, even though the we're using flat data structure - vector.
+            The iterators are stored in ordered pairs, even though the we're using flat data structure - vector.
         */
-        std::vector<int> pos;
+        std::vector<std::vector<std::string>::const_iterator> pos_its;
 
         int num_of_args = 0;
 
@@ -989,7 +1052,7 @@ std::string HUAJISCRIPTBASE::Evaluate_Expression(const std::vector<std::string> 
                 // If this is already at top level
                 if(num_of_unclosed_braces==0) {
 
-                    pos.push_back(it-expr->begin());
+                    pos_its.push_back(it);
                 }
 
                 // Add unclosed braces
@@ -1004,7 +1067,7 @@ std::string HUAJISCRIPTBASE::Evaluate_Expression(const std::vector<std::string> 
                         Here we add 1 because we will use std::vector constructor
                         , which does not include end iterator
                     */
-                    pos.push_back(it-expr->begin()+1);
+                    pos_its.push_back(it+1);
                     ++num_of_args;
                 }
 
@@ -1019,8 +1082,8 @@ std::string HUAJISCRIPTBASE::Evaluate_Expression(const std::vector<std::string> 
 
                 // At top level and is not EXPR_START or EXPR_END then it must be a val
                 if(num_of_unclosed_braces==0) {
-                    pos.push_back(it-expr->begin());
-                    pos.push_back(it-expr->begin()+1);
+                    pos_its.push_back(it);
+                    pos_its.push_back(it+1);
                     ++num_of_args;
                 }
             }
@@ -1034,32 +1097,38 @@ std::string HUAJISCRIPTBASE::Evaluate_Expression(const std::vector<std::string> 
 
         /*
             As we don't have a parser, we have to create ast dynamically.
-            Create a vector of strings to store evaluated expression.
+            Create a std::vector<std::string>* vals_container to store evaluated expression first,
+            later we will construct a const_itVecStr object based on this vals_container
+            and pass it to other processing functions
         */
-        std::vector<std::string> *vals = new std::vector<std::string>;
-        std::vector<std::string> *arg = nullptr;
-        for(int i=0;i<pos.size();i+=2) {
-            arg = new std::vector<std::string>(expr->begin()+pos[i], expr->begin()+pos[i+1]);
+        std::vector<std::string>* vals_container = new std::vector<std::string>;
+        for(int i=0;i<pos_its.size();i+=2) {
+            const_itVecStr* arg = new const_itVecStr(pos_its.at(i), pos_its.at(i+1));
             try {
-                vals->push_back(Evaluate_Expression(arg));
+                vals_container->push_back(Evaluate_Expression(arg));
             }
-            catch (const HUAJIBASE_EXCEPTION& hj_base_except) {
+            catch (const HUAJIBASE_EXCEPTION& huaji_except) {
                 delete arg;
-                delete vals;
-                throw hj_base_except;
+                delete vals_container;
+                throw huaji_except;
             }
             delete arg;
         }
+
+        // Construct const_itVecStr for evaluation
+        const_itVecStr* vals = new const_itVecStr(vals_container->begin(), vals_container->end());
 
         // Evaluate Expression
         try {
             ans_val = Basic_Operation(op, vals);
         }
-        catch (const HUAJIBASE_EXCEPTION& hj_base_except) {
+        catch (const HUAJIBASE_EXCEPTION& huaji_except) {
             delete vals;
-            throw hj_base_except;
+            delete vals_container;
+            throw huaji_except;
         }
         delete vals;
+        delete vals_container;
     }
     Print_Debug_Info(DEB_EXPR_END, DECREASE_AST_DEPTH, ans_val);
     
@@ -1067,9 +1136,9 @@ std::string HUAJISCRIPTBASE::Evaluate_Expression(const std::vector<std::string> 
 }
 
 template <typename T>
-std::string HUAJISCRIPTBASE::Numerical_Operation_Templated_Helper(const std::string& op, int op_key, int vals_size, int T_name, const std::vector<std::string> *vals) {
+std::string hjbase::HUAJISCRIPTBASE::Numerical_Operation_Templated_Helper(const std::string& op, int op_key, int vals_size, int T_name, const const_itVecStr* vals) {
     // Initialize numerical value array
-    T *numerical_vals = new T[vals_size];
+    T* numerical_vals = new T[vals_size];
     T numerical_ans_val = 0;
 
     bool direct_string_return = false;
@@ -1204,9 +1273,9 @@ std::string HUAJISCRIPTBASE::Numerical_Operation_Templated_Helper(const std::str
             }
         }
     }
-    catch (const HUAJIBASE_EXCEPTION& hj_base_except) {
+    catch (const HUAJIBASE_EXCEPTION& huaji_except) {
         delete [] numerical_vals;
-        throw hj_base_except;
+        throw huaji_except;
     }
     catch (...) {
         delete [] numerical_vals;
@@ -1231,10 +1300,10 @@ std::string HUAJISCRIPTBASE::Numerical_Operation_Templated_Helper(const std::str
 }
 
 // Explicit template instantiation
-template std::string HUAJISCRIPTBASE::Numerical_Operation_Templated_Helper<long>(const std::string&, int, int, int, const std::vector<std::string> *vals);
-template std::string HUAJISCRIPTBASE::Numerical_Operation_Templated_Helper<double>(const std::string&, int, int, int, const std::vector<std::string> *vals);
+template std::string hjbase::HUAJISCRIPTBASE::Numerical_Operation_Templated_Helper<long>(const std::string&, int, int, int, const const_itVecStr*);
+template std::string hjbase::HUAJISCRIPTBASE::Numerical_Operation_Templated_Helper<double>(const std::string&, int, int, int, const const_itVecStr*);
 
-std::string HUAJISCRIPTBASE::Numerical_Operation(const std::string& op, int op_key, const std::vector<std::string> *vals) {
+std::string hjbase::HUAJISCRIPTBASE::Numerical_Operation(const std::string& op, int op_key, const const_itVecStr* vals) {
     int vals_size = vals->size();
     // we allow vals to be empty in some cases, but none of numerical operation can have no vals
     if(!vals_size) {
@@ -1243,7 +1312,7 @@ std::string HUAJISCRIPTBASE::Numerical_Operation(const std::string& op, int op_k
     }
     std::string ans_val;
     /*
-        Determine to use float point calculation or integer, this process is slow,
+        Determine to use float point calculation or integer, this process might be slow,
         so we decide to add an option for users to disable float point
     */
     if(enable_float_point) {
@@ -1263,11 +1332,11 @@ std::string HUAJISCRIPTBASE::Numerical_Operation(const std::string& op, int op_k
     return ans_val;
 }
 
-std::string HUAJISCRIPTBASE::More_On_Slice_Operator_Level_1(const std::vector<std::string> *vals) {
+std::string hjbase::HUAJISCRIPTBASE::More_On_Slice_Operator_Level_1(const const_itVecStr* vals) {
     throw huaji_except;
 }
 
-std::string HUAJISCRIPTBASE::Other_Basic_Operation(const std::string& op, int op_key, const std::vector<std::string> *vals) {
+std::string hjbase::HUAJISCRIPTBASE::Other_Basic_Operation(const std::string& op, int op_key, const const_itVecStr* vals) {
     if(!vals->size()) {
         Signal_Error(SE_ARITY_MISMATCH, op);
         throw syntax_except;
@@ -1329,7 +1398,7 @@ std::string HUAJISCRIPTBASE::Other_Basic_Operation(const std::string& op, int op
                 try {
                     return More_On_Slice_Operator_Level_1(vals);
                 }
-                catch (const HUAJIBASE_EXCEPTION &huaji_except) {
+                catch (const HUAJIBASE_EXCEPTION& huaji_except) {
                     int vals_size = vals->size();
                     if(vals_size>1) {
                         int slice_start = std::stoi(vals->at(1));
@@ -1357,14 +1426,14 @@ std::string HUAJISCRIPTBASE::Other_Basic_Operation(const std::string& op, int op
             }
         }
     }
-    catch (const HUAJIBASE_EXCEPTION &hj_base_except) {
-        throw hj_base_except;
+    catch (const HUAJIBASE_EXCEPTION& huaji_except) {
+        throw huaji_except;
     }
-    catch (const std::invalid_argument &ia) {
+    catch (const std::invalid_argument& ia) {
         Signal_Error(NE_CONVERSION_FAILED, vals);
         throw eval_except;
     }
-    catch (const std::out_of_range &oor) {
+    catch (const std::out_of_range& oor) {
         Signal_Error(NE_OUT_OF_RANGE, vals);
         throw eval_except;
     }
@@ -1377,12 +1446,12 @@ std::string HUAJISCRIPTBASE::Other_Basic_Operation(const std::string& op, int op
     throw huaji_except;
 }
 
-std::string HUAJISCRIPTBASE::More_On_Expression_Level_1(const std::string& op, const std::vector<std::string> *vals) {
+std::string hjbase::HUAJISCRIPTBASE::More_On_Expression_Level_1(const std::string& op, const const_itVecStr* vals) {
     Signal_Error(SE_UNABLE_TO_PROCESS_EXPR, op);
     throw eval_except;
 }
 
-std::string HUAJISCRIPTBASE::Basic_Operation(const std::string& op, const std::vector<std::string> *vals) {
+std::string hjbase::HUAJISCRIPTBASE::Basic_Operation(const std::string& op, const const_itVecStr* vals) {
     try {
         std::map<std::string, int>::const_iterator op_key_it = NUMERICAL_OPERATORS.find(op);
         // Numerical_operators
@@ -1398,8 +1467,8 @@ std::string HUAJISCRIPTBASE::Basic_Operation(const std::string& op, const std::v
             return More_On_Expression_Level_1(op, vals);
         }
     }
-    catch (const HUAJIBASE_EXCEPTION &hj_base_except) {
-        throw hj_base_except;
+    catch (const HUAJIBASE_EXCEPTION& huaji_except) {
+        throw huaji_except;
     }
     // catch all exceptions
     catch (...) {
@@ -1408,11 +1477,11 @@ std::string HUAJISCRIPTBASE::Basic_Operation(const std::string& op, const std::v
     }
 }
 
-std::string HUAJISCRIPTBASE::More_On_Names_Query_Level_1(const std::string& name) {
+std::string hjbase::HUAJISCRIPTBASE::More_On_Names_Query_Level_1(const std::string& name) {
     throw name_except;
 }
 
-std::string HUAJISCRIPTBASE::Handle_Val(const std::string& name_or_val) {
+std::string hjbase::HUAJISCRIPTBASE::Handle_Val(const std::string& name_or_val) {
     if(enable_raw_string) {
         if(name_or_val.size()>1) {
             if(name_or_val.front()=='$'&&name_or_val.back()=='$') {
@@ -1420,7 +1489,7 @@ std::string HUAJISCRIPTBASE::Handle_Val(const std::string& name_or_val) {
                 try {
                     return More_On_Names_Query_Level_1(name);
                 }
-                catch (const NAME_EXCEPTION &name_except) {
+                catch (const NAME_EXCEPTION& name_except) {
                     return Resolve_Name(name, names);
                 }
             }
@@ -1438,7 +1507,7 @@ std::string HUAJISCRIPTBASE::Handle_Val(const std::string& name_or_val) {
             try {
                 return More_On_Names_Query_Level_1(name_or_val);
             }
-            catch (const NAME_EXCEPTION &name_except) {
+            catch (const NAME_EXCEPTION& name_except) {
                 return Resolve_Name(name_or_val, names);
             }
         }

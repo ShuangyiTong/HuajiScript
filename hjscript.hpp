@@ -7,6 +7,7 @@
 #include <fstream>
 #include <cstdlib>
 #include <map>
+#include <utility>
 #include <queue>
 
 
@@ -17,7 +18,7 @@
     Comment this directive to improve performance
     Enable this will let itVecStr constructor check if iterator range is valid
 */
-#define pVecStr_RANGE_SAFETY_CHECK
+#define itVecStr_RANGE_SAFETY_CHECK
 
 /*  
     class with const pointer based on std::vector<std::string>, 
@@ -73,6 +74,9 @@ namespace hjbase {
             const char NOSUBST = '@';
             const std::string SLICER = ":";
             const char cSLICER = ':';
+            const std::string LIST_DIRECT = "`";
+            const char cLIST_DIRECT = '`';
+            const char cLIST_TO_EVALUATE = '\'';
         }
 
         namespace operators {
@@ -117,7 +121,14 @@ namespace hjbase {
             const std::string OP_NE = "!=";
             const std::string OP_EQ = "=";
             const std::string OP_STRAPP = "strapp";
+            const std::string OP_STRLEN = "strlen";
             const std::string OP_SLICE = "slice";
+            const std::string OP_LIST = "list";
+            const std::string OP_FIRST = "first";
+            const std::string OP_REST = "rest";
+            const std::string OP_CONS = "cons";
+            const std::string OP_APPEND = "append";
+            const std::string OP_RESOLVE = "resolve";
 
             enum {
                 eOP_AND,
@@ -126,7 +137,14 @@ namespace hjbase {
                 eOP_NE,
                 eOP_EQ,
                 eOP_STRAPP,
+                eOP_STRLEN,
                 eOP_SLICE,
+                eOP_LIST,
+                eOP_FIRST,
+                eOP_REST,
+                eOP_CONS,
+                eOP_APPEND,
+                eOP_RESOLVE,
             };
 
             const std::map<std::string, int> OTHER_BASIC_OPERATORS = {
@@ -136,11 +154,18 @@ namespace hjbase {
                 { OP_NE, eOP_NE },
                 { OP_EQ, eOP_EQ },
                 { OP_STRAPP, eOP_STRAPP },
+                { OP_STRLEN, eOP_STRLEN },
                 { OP_SLICE, eOP_SLICE },
+                { OP_LIST, eOP_LIST },
+                { OP_FIRST, eOP_FIRST },
+                { OP_REST, eOP_REST },
+                { OP_CONS, eOP_CONS },
+                { OP_APPEND, eOP_APPEND },
+                { OP_RESOLVE, eOP_RESOLVE },
             };
         }
         namespace commands_names {
-            const std::string CMD_NAME_DECLARE = "var";
+            const std::string CMD_NAME_DECLARE = "declare";
             const std::string CMD_NAME_MUTATE = "mutate";
             const std::string CMD_NAME_MUTATE_TO = "to";
             const std::string CMD_PRINT = "print";
@@ -155,6 +180,9 @@ namespace hjbase {
             const std::string CONFIG_RAW_STRING_DISABLE = "rawstr_off";
 
             const std::string DEB_PRINT_GLOBAL_NAMES = "print_global_names";
+            const std::string DEB_CHECK_EXPECT = "check-expect";
+
+            const std::string EVALUATE = "(";
 
             enum {
                 eCMD_NAME_DECLARE,
@@ -169,6 +197,8 @@ namespace hjbase {
                 eCONFIG_RAW_STRING_ENABLE,
                 eCONFIG_RAW_STRING_DISABLE,
                 eDEB_PRINT_GLOBAL_NAMES,
+                eDEB_CHECK_EXPECT,
+                eEVALUATE,
             };
 
             const std::map<std::string, int> HJBASE_CMD_SEARCH_TREE = {
@@ -184,6 +214,8 @@ namespace hjbase {
                 { CONFIG_RAW_STRING_ENABLE, eCONFIG_RAW_STRING_ENABLE },
                 { CONFIG_RAW_STRING_DISABLE, eCONFIG_RAW_STRING_DISABLE },
                 { DEB_PRINT_GLOBAL_NAMES, eDEB_PRINT_GLOBAL_NAMES },
+                { DEB_CHECK_EXPECT, eDEB_CHECK_EXPECT },
+                { EVALUATE, eEVALUATE },
             };
         }
         namespace common_msgs {
@@ -195,7 +227,7 @@ namespace hjbase {
 
             const std::string IE_UNDEFINED_NAME = "Internal Error: Name undefined";
             const std::string IE_UNKNOWN = "Internal Error: Unknown error";
-            const std::string IE_CONST_PVECSTR_OOR = "Internal Error: const_itVecStr out of range";
+            const std::string IE_CONST_ITVECSTR_OOR = "Internal Error: const_itVecStr out of range";
 
             const std::string NE_CONVERSION_FAILED = "Numerical Exception: Unable to convert to numerical value";
             const std::string NE_OUT_OF_RANGE = "Numerical Exception: Numerical value out of range";
@@ -205,10 +237,22 @@ namespace hjbase {
 
             const std::string AE_DVZ = "Arithemetic Exception: Divide by zero";
 
+            const std::string SLE_OUT_OF_RANGE = "Slice out of range";
+
+            const std::string TE_NOT_LIST = "Type Error: Not a list";
+
+            const std::string LE_EMPTY = "List Error: Unable to perform operation on empty list";
+            const std::string LE_INCOMPLETE = "List Error: Incomplete list";
+
             const std::string DEB_COMMAND_START = "Executing command: ";
             const std::string DEB_COMMAND_END = "Command execution complete: ";
             const std::string DEB_EXPR_START = "Evaluating expression: ";
             const std::string DEB_EXPR_END = "Expression Evaluation complete: ";
+            const std::string DEB_TEST_RES_HEAD = "Test on ";
+            const std::string DEB_TEST_RES_PASS = "passed.";
+            const std::string DEB_TEST_RES_FAIL = "failed.";
+            const std::string DEB_TEST_RES_EXPECTED = "Expected - ";
+            const std::string DEB_TEST_RES_OUTPUT = "Output - ";
         }
         namespace miscellaneous {
             const std::string NAME_THEADER = "Name";
@@ -222,7 +266,7 @@ namespace hjbase {
             const std::string BOOL_FALSE = "0";
             const std::string INITIAL_VALUE = "NONE";
 
-            const std::string CONSOLE_INFO_STRING = "Huaji Script Interpreter v1.0";
+            const std::string CONSOLE_INFO_STRING = "Huaji Script Interpreter v1.04";
             const std::string COMMAND_LINE_PROMPT = "OvO >>> ";
 
             const std::string NONEWLINE = "--nonl";
@@ -230,6 +274,7 @@ namespace hjbase {
         }
         namespace type_tag {
             const std::string STRING_TAG = "#:string";
+            const std::string LIST_TAG = "#:list";
         }
     }
 
@@ -245,9 +290,15 @@ namespace hjbase {
 
         bool Check_If_Float_Point(const const_itVecStr* vals);
 
+        std::pair<int, int> Get_First_Element_Pos(const std::string& this_list);
+
+        std::string Format_List_String(const std::string& original_lst);
+
         bool Starts_With(const std::string& this_str, const std::string& start_str);
 
         bool Is_Numerical(const std::string& this_str);
+
+        bool Quotation_Rquired_For_List_Elem(const std::string& this_str);
 
     }
 
@@ -262,6 +313,13 @@ namespace hjbase {
         class TOKEN_EXCEPTION : public std::exception {
             virtual const char* what() const noexcept {
                 return "Thrown by tokenizer";
+            }
+        };
+
+        // A example where this is used in hjbase::HUAJISCRIPTBASE::More_On_Slice_Operator_Level_1(const const_itVecStr*)
+        class FUNCTION_NOT_OVERLOADED_YET : public HUAJIBASE_EXCEPTION {
+            virtual const char* what() const noexcept {
+                return "this virtual function has not been overloaded";
             }
         };
 
@@ -284,11 +342,27 @@ namespace hjbase {
         };
 
         const HUAJIBASE_EXCEPTION huaji_except;
+        const FUNCTION_NOT_OVERLOADED_YET fnld_except;
         const EVALUATION_EXCEPTION eval_except;
         const SYNTAX_EXCEPTION syntax_except;
         const NAME_EXCEPTION name_except;
         const TOKEN_EXCEPTION token_except;
     }
+
+    class LISTFORMATTER {
+        public:
+
+            LISTFORMATTER();
+            ~LISTFORMATTER();
+
+            int Take_One_Char(char cur_char);
+
+            std::string formatted_lst;
+
+        private:
+            int list_depth;
+            bool prev_space, is_in_list_quotation;
+    };
 
     class HUAJITOKENIZER {
         public:
@@ -301,10 +375,14 @@ namespace hjbase {
             bool enable_raw_string;
         
         private:
-
+            
+            void Constructor_Helper();
             std::istream *source;
             std::queue<std::string> *token_queue;
-            bool is_cin, is_in_quotation, is_in_block_comment, is_in_line_comment, is_in_nosubst, is_in_square_bracket;
+            int list_depth;
+            bool is_cin, is_in_quotation, is_in_block_comment, is_in_line_comment,
+            is_in_nosubst, is_in_square_bracket, is_in_list;
+            class LISTFORMATTER* lst_formatter;
     };
 
 
@@ -325,15 +403,15 @@ namespace hjbase {
 
         protected:
 
-            virtual int More_On_Command_Level_1(const const_itVecStr* command_to_be_exectued);
+            int More_On_Command_Level_1(const const_itVecStr* command);
 
-            virtual std::string More_On_Expression_Level_1(const std::string& op, const const_itVecStr* vals);
+            std::string More_On_Expression_Level_1(const std::string& op, const const_itVecStr* vals);
 
-            virtual std::string More_On_Names_Query_Level_1(const std::string& name);
+            std::string More_On_Names_Query_Level_1(const std::string& name);
 
-            virtual std::string More_On_Slice_Operator_Level_1(const const_itVecStr* vals);
+            std::string More_On_Slice_Operator_Level_1(const const_itVecStr* vals);
 
-            virtual void More_Cleanup_Level_1();
+            void More_Cleanup_Level_1();
             
             std::string Evaluate_Expression(const_itVecStr* p_vec_str);
 
@@ -374,9 +452,11 @@ namespace hjbase {
             
             int Take_One_Token(std::vector<std::string>::const_iterator token_it);
 
-            int Huaji_Command_Interpreter(const const_itVecStr* command_to_be_exectued);
+            int Huaji_Command_Interpreter(const const_itVecStr* command);
 
             std::map<std::string, std::string>* names;
+
+            void Constructor_Helper();
 
             class HUAJITOKENIZER* tokenizer;
 

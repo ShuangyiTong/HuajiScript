@@ -7,6 +7,9 @@
 #define REQUIRE_MORE_TOKENS_FOR_COMPLETE_COMMAND_RETURN_CODE 0
 #define COMMAND_COMPLETED_RETURN_CODE 1
 
+#define FORMATTING_COMPLETE 1
+#define REQUIRE_MORE_CHAR_FOR_COMPLETE_LST 0
+
 #define TYPE_DOUBLE 0
 #define TYPE_LONG 1
 
@@ -68,6 +71,78 @@ bool hjbase::ufunc::Check_If_Float_Point(const const_itVecStr* vals) {
     return false;
 }
 
+std::pair<int, int> hjbase::ufunc::Get_First_Element_Pos(const std::string& this_list) {
+    if(this_list.front()!=cEXPR_START||this_list.back()!=cEXPR_END) {
+        Signal_Error(TE_NOT_LIST, this_list);
+        throw eval_except;
+    }
+    // the previous implicitly checked this_list.size() must be at least 2
+    if(this_list.size()==2) {
+        Signal_Error(LE_EMPTY, this_list);
+        throw eval_except;
+    }
+    bool is_quotation = false;
+    bool is_sublist = false;
+    // Get the first position which is not a space after cEXPR_START
+    int start_pos = 1;
+    for(;start_pos<this_list.size()-1;++start_pos) {
+        if(this_list[start_pos]!=' ') {
+            if(this_list[start_pos]==cEXPR_START) {
+                is_sublist = true;
+            }
+            if(this_list[start_pos]==QUOTATION_MARK) {
+                is_quotation = true;
+            }
+            break;
+        }
+    }
+    for(std::string::const_iterator it=this_list.begin()+start_pos+1;it!=this_list.end();++it) {
+        if(is_quotation) {
+            if(*it==QUOTATION_MARK) {
+                // include QUOTATION mark
+                return std::pair<int, int>(start_pos, it-this_list.begin()-start_pos+1);
+            }
+        }
+        else if(is_sublist) {
+            if(*it==cEXPR_END) {
+                // include cEXPR_START and cEXPR_END
+                return std::pair<int, int>(start_pos, it-this_list.begin()-start_pos+1);
+            }
+        }
+        else {
+            if(*it==' ') {
+                // exclude space
+                return std::pair<int, int>(start_pos, it-this_list.begin()-start_pos);
+            }
+        }
+    }
+    if(is_quotation||is_sublist) {
+        Signal_Error(LE_INCOMPLETE, this_list);
+        throw eval_except;
+    }
+    // From previous condition, start_pos must be less or equal to this_list.size()-1
+    if(start_pos==this_list.size()-1) {
+        Signal_Error(LE_EMPTY, this_list);
+    }
+    return std::pair<int, int>(start_pos, this_list.size()-start_pos-1);
+}
+
+std::string hjbase::ufunc::Format_List_String(const std::string& original_lst) {                    
+    // construct LISTFORMATTER object
+    LISTFORMATTER lst_formatter;
+    for(std::string::const_iterator it=original_lst.begin();it!=original_lst.end()-1;++it) {
+        if(lst_formatter.Take_One_Char(*it)==FORMATTING_COMPLETE) {
+            Signal_Error(TE_NOT_LIST, original_lst);
+            throw eval_except;
+        }
+    }
+    if(lst_formatter.Take_One_Char(original_lst.back())!=FORMATTING_COMPLETE) {
+        Signal_Error(TE_NOT_LIST, original_lst);
+        throw eval_except;
+    }
+    return lst_formatter.formatted_lst;
+}
+
 inline bool hjbase::ufunc::Starts_With(const std::string& this_str, const std::string& start_str) {
     if(this_str.substr(0,start_str.size())==start_str) {
         return true;
@@ -77,19 +152,33 @@ inline bool hjbase::ufunc::Starts_With(const std::string& this_str, const std::s
 
 inline bool hjbase::ufunc::Is_Numerical(const std::string& this_str) {
     for(std::string::const_iterator it=this_str.begin();it!=this_str.end();++it) {
-        if(!isdigit(*it)&&(*it)!='.') {
+        if(!isdigit(*it)&&(*it)!='.'&&(*it)!='-') {
             return false;
         }
     }
     return true;
 }
 
+inline bool hjbase::ufunc::Quotation_Rquired_For_List_Elem(const std::string& this_str) {
+    if(this_str.front()==cEXPR_START&&this_str.back()==cEXPR_END) {
+        return false;
+    }
+    bool ret_flag = false;
+    for(std::string::const_iterator it=this_str.begin();it!=this_str.end();++it) {
+         if(*it==' ') {
+            ret_flag = true;
+            break;
+        }
+    }
+    return ret_flag;
+}
+
 const_itVecStr::const_itVecStr(std::vector<std::string>::const_iterator from_begin, std::vector<std::string>::const_iterator from_end)
     : this_begin (from_begin)
     , this_end (from_end) {
-    #ifdef pVecStr_RANGE_SAFETY_CHECK
+    #ifdef itVecStr_RANGE_SAFETY_CHECK
         if(this_begin>this_end) {
-            Signal_Error(IE_CONST_PVECSTR_OOR, std::string());
+            Signal_Error(IE_CONST_ITVECSTR_OOR, std::string());
             throw huaji_except;
         }
     #endif
@@ -121,33 +210,111 @@ int const_itVecStr::size() const {
     return  this_end-this_begin;
 }
 
-hjbase::HUAJITOKENIZER::HUAJITOKENIZER(std::string file_name) 
-    : is_cin (false)
-    , is_in_quotation (false)
-    , is_in_block_comment (false)
-    , is_in_line_comment (false)
-    , is_in_square_bracket (false)
-    , is_in_nosubst (false)
-    , enable_raw_string (false) {
-    source = new std::ifstream(file_name);
+hjbase::LISTFORMATTER::LISTFORMATTER()
+    // Not allowed to have space after EXPR_START
+    : prev_space (true) 
+    , list_depth (0) 
+    , is_in_list_quotation (false) {
+    formatted_lst = EXPR_START;
+}
+
+hjbase::LISTFORMATTER::~LISTFORMATTER() {}
+
+int hjbase::LISTFORMATTER::Take_One_Char(char cur_char) {
+    if(is_in_list_quotation) {
+        formatted_lst.push_back(cur_char);
+        if(cur_char==QUOTATION_MARK) {
+            is_in_list_quotation = false;
+            formatted_lst.push_back(' ');
+            prev_space = true;
+        }
+    }
+    else {
+        switch (cur_char) {
+            case cEXPR_END: {
+                // Replace last char with cEXPR_END if last char is a space
+                if(formatted_lst.back()==' ') {
+                    formatted_lst[formatted_lst.size()-1] = cEXPR_END;
+                }
+                else {
+                    formatted_lst.push_back(cEXPR_END);
+                }
+                // not in any other sublist
+                if(!list_depth) {
+                    return FORMATTING_COMPLETE;
+                }
+                // in other sublist, just decrease list_depth
+                else {
+                    --list_depth;
+                }
+                break;
+            }
+            case cEXPR_START: {
+                formatted_lst.push_back(cEXPR_START);
+                // Not allowed to have space after EXPR_START
+                prev_space = true;
+                ++list_depth;
+                break;
+            }
+            case QUOTATION_MARK: {
+                // add a space if no prev_space
+                if(!prev_space) {
+                    formatted_lst.push_back(' ');
+                }
+                formatted_lst.push_back(cur_char);
+                is_in_list_quotation = true;
+                break;
+            }
+            default: {
+                if(cur_char==' ') {
+                    if(!prev_space) {
+                        prev_space = true;
+                        formatted_lst.push_back(cur_char);
+                    }
+                }
+                else {
+                    formatted_lst.push_back(cur_char);
+                }
+            }
+        }
+        // Reset prev_space if cur_char is not a space
+        if(cur_char!=' '&&cur_char!=cEXPR_START) {
+            prev_space = false;
+        }
+    }
+    return REQUIRE_MORE_CHAR_FOR_COMPLETE_LST;
+}
+
+void hjbase::HUAJITOKENIZER::Constructor_Helper() {
+    is_in_quotation = false;
+    is_in_block_comment = false;
+    is_in_line_comment = false;
+    is_in_square_bracket = false;
+    is_in_nosubst = false;
+    is_in_list = false;
+    enable_raw_string = false;
     token_queue = new std::queue<std::string>;
+    lst_formatter = nullptr;
+}
+
+hjbase::HUAJITOKENIZER::HUAJITOKENIZER(std::string file_name) 
+    : is_cin (false) {
+    source = new std::ifstream(file_name);
+    Constructor_Helper();
 }
 
 hjbase::HUAJITOKENIZER::HUAJITOKENIZER() 
-    : is_cin (true)
-    , is_in_quotation (false)
-    , is_in_block_comment (false)
-    , is_in_line_comment (false)
-    , is_in_square_bracket (false)
-    , is_in_nosubst (false)
-    , enable_raw_string (false) {
+    : is_cin (true) {
     source = &(std::cin);
-    token_queue = new std::queue<std::string>;
+    Constructor_Helper();
 }
 
 hjbase::HUAJITOKENIZER::~HUAJITOKENIZER() {
     if(!is_cin) {
         delete source;
+    }
+    if(lst_formatter) {
+        delete lst_formatter;
     }
     delete token_queue;
 }
@@ -163,13 +330,14 @@ std::string hjbase::HUAJITOKENIZER::Get_One_Token() {
         while(1) {
             char cur_char = source->get();
             if(cur_char==std::char_traits<char>::eof()) {
-                if(token.size()) {
+                // is_in_list store token in lst_formatter object, so token.size() won't work here.
+                if(token.size()||is_in_list) {
                     Signal_Error(SE_REQUIRE_MORE_TOKENS, token);
                 }
                 throw token_except;
             }
             // already in quotation mark
-            if(is_in_quotation) {
+            else if(is_in_quotation) {
                 if(cur_char==QUOTATION_MARK) {
                     is_in_quotation = false;
                     if(enable_raw_string) {
@@ -201,6 +369,20 @@ std::string hjbase::HUAJITOKENIZER::Get_One_Token() {
                 }
                 else {
                     token.push_back(cur_char);
+                }
+            }
+            else if(is_in_list) {
+                if(!lst_formatter) {
+                    lst_formatter = new LISTFORMATTER();
+                }
+                if(lst_formatter->Take_One_Char(cur_char)==FORMATTING_COMPLETE) {
+                    std::string ret_lst = lst_formatter->formatted_lst;
+                    delete lst_formatter;
+                    // add a LIST_TAG
+                    ret_lst.insert(0, LIST_TAG);
+                    lst_formatter = nullptr;
+                    is_in_list = false;
+                    return ret_lst;
                 }
             }
             // in no substitution block
@@ -284,12 +466,48 @@ std::string hjbase::HUAJITOKENIZER::Get_One_Token() {
                         }
                         return "=";
                     }
+                    case cLIST_TO_EVALUATE: {
+                        if(next_char==cEXPR_START) {
+                            source->get();
+                            if(token.size()) {
+                                token_queue->push(EXPR_START);
+                                token_queue->push(OP_LIST);
+                                return token;
+                            }
+                            else {
+                                token_queue->push(OP_LIST);
+                                return EXPR_START;
+                            }
+                        }
+                        else {
+                            token.push_back(cLIST_TO_EVALUATE);
+                        }
+                    }
+                    case cLIST_DIRECT: {
+                        if(next_char==cEXPR_START) {
+                            source->get();
+                            is_in_list = true;
+                            if(token.size()) {
+                                return token;
+                            }
+                        }
+                        else {
+                            return LIST_DIRECT;
+                        }
+                        break;
+                    }
                     case cSLICER: {
                         if(is_in_square_bracket&&token.size()) {
                             return token;
                         }
                         else {
-                            return SLICER;
+                            if(token.size()) {
+                                token_queue->push(SLICER);
+                                return token;
+                            }
+                            else {
+                                return SLICER;
+                            }
                         }
                     }
                     case QUOTATION_MARK: {
@@ -401,28 +619,27 @@ std::string hjbase::HUAJITOKENIZER::Get_One_Token() {
     }
 }
 
+void hjbase::HUAJISCRIPTBASE::Constructor_Helper() {
+    collect_status = 0;
+    collect_length = 0;
+    enable_float_point = true;
+    enable_debug_mode = false;
+    current_ast_depth = 0;
+    enable_raw_string = false;
+}
+
 hjbase::HUAJISCRIPTBASE::HUAJISCRIPTBASE(std::string file_name) 
-    : collect_status (0)
-    , collect_length (0)
-    , enable_float_point (true)
-    , enable_debug_mode (false)
-    , current_ast_depth (0)
-    , enable_raw_string (false)
-    , is_console (false) {
+    : is_console (false) {
     names = new std::map<std::string, std::string>;
     tokenizer = new HUAJITOKENIZER(file_name);
+    Constructor_Helper();
 }
 
 hjbase::HUAJISCRIPTBASE::HUAJISCRIPTBASE() 
-    : collect_status (0)
-    , collect_length (0)
-    , enable_float_point (true)
-    , enable_debug_mode (false)
-    , current_ast_depth (0)
-    , enable_raw_string (false)
-    , is_console (true) {
+    : is_console (true) {
     names = new std::map<std::string, std::string>;
     tokenizer = new HUAJITOKENIZER();
+    Constructor_Helper();
 }
 
 hjbase::HUAJISCRIPTBASE::~HUAJISCRIPTBASE() {
@@ -431,7 +648,7 @@ hjbase::HUAJISCRIPTBASE::~HUAJISCRIPTBASE() {
 }
 
 void hjbase::HUAJISCRIPTBASE::Cleanup_If_Exception_Thrown() {
-    current_ast_depth = 0;
+    current_ast_depth = AST_DEPTH_UNCHANGED;
     More_Cleanup_Level_1();
     return;
 }
@@ -723,65 +940,65 @@ bool hjbase::HUAJISCRIPTBASE::Find_And_Evaluate_Condition(const const_itVecStr* 
 
 }
 
-int hjbase::HUAJISCRIPTBASE::Huaji_Command_Interpreter(const const_itVecStr* command_to_be_executed) {
+int hjbase::HUAJISCRIPTBASE::Huaji_Command_Interpreter(const const_itVecStr* command) {
 
-    Print_Debug_Info(DEB_COMMAND_START, INCREASE_AST_DEPTH, command_to_be_executed);
+    Print_Debug_Info(DEB_COMMAND_START, INCREASE_AST_DEPTH, command);
 
     // Only a DELIMITER presented
-    if(command_to_be_executed->size()==1) {
+    if(command->size()==1) {
         return VALID_COMMAND_RETURN_CODE;
     }
 
-    std::string command = command_to_be_executed->at(0);
+    std::string cmd_str = command->at(0);
 
-    std::map<std::string, int>::const_iterator cmd_key_it = HJBASE_CMD_SEARCH_TREE.find(command);
+    std::map<std::string, int>::const_iterator cmd_key_it = HJBASE_CMD_SEARCH_TREE.find(cmd_str);
     int cmd_key;
     if(cmd_key_it!=HJBASE_CMD_SEARCH_TREE.end()) {
         cmd_key = cmd_key_it->second;
     }
     else {
-        return More_On_Command_Level_1(command_to_be_executed);
+        return More_On_Command_Level_1(command);
     }
 
     switch (cmd_key) {
     // Variable declare
         case eCMD_NAME_DECLARE: {
 
-            if(command_to_be_executed->size() < 3) {
-                Signal_Error(SE_REQUIRE_MORE_TOKENS, command_to_be_executed);
+            if(command->size() < 3) {
+                Signal_Error(SE_REQUIRE_MORE_TOKENS, command);
                 Cleanup_If_Exception_Thrown();
                 return VALID_COMMAND_RETURN_CODE;
             }
 
-            std::string name = command_to_be_executed->at(1);
+            std::string name = command->at(1);
             int declared = 0;
 
             const_itVecStr* expr = nullptr;
             std::string val;
 
             try {
-                for(std::vector<std::string>::const_iterator it=command_to_be_executed->begin()+2;it!=command_to_be_executed->end()-1;++it) {
+                for(std::vector<std::string>::const_iterator it=command->begin()+2;it!=command->end()-1;++it) {
                     // Assign VAL when declare
                     if(*it==OP_EQ) {
                         std::vector<std::string>::const_iterator expr_begin_it = it+1;
                         // right expr not provided
-                        if(expr_begin_it==command_to_be_executed->end()-1) {
-                            Signal_Error(SE_UNEXPECTED_TOKEN, command_to_be_executed);
+                        if(expr_begin_it==command->end()-1) {
+                            Signal_Error(SE_UNEXPECTED_TOKEN, command);
                             throw syntax_except;
                         }
                         std::vector<std::string>::const_iterator expr_end_it = it+2;
-                        for(it=expr_end_it;it!=command_to_be_executed->end()-1;++it) {
+                        for(it=expr_end_it;it!=command->end()-1;++it) {
                             // expr_end_it should be it + 1 as it is excluded
                             expr_end_it = it;
                             if(*it==SEPARATOR) {
                                 break;
                             }
                         }
-                        if(it==command_to_be_executed->end()-1) {
+                        if(it==command->end()-1) {
                             /*
                                 Here is means it is at same point at DELIMITER, 
                                 so we need to assign expr_end_it = it (because this is not executed yet) first,
-                                and more importantly decrease it by 1 as ++it in outter loop will bring it==command_to_be_executed->end()
+                                and more importantly decrease it by 1 as ++it in outter loop will bring it==command->end()
                                 and cause undefined behaviour.
                             */
                             expr_end_it = it;
@@ -803,7 +1020,7 @@ int hjbase::HUAJISCRIPTBASE::Huaji_Command_Interpreter(const const_itVecStr* com
                     }
                     else if(*it==SEPARATOR) {
                         if(declared) {
-                            Signal_Error(SE_UNEXPECTED_TOKEN, command_to_be_executed);
+                            Signal_Error(SE_UNEXPECTED_TOKEN, command);
                             throw syntax_except;
                         }
                         Declare_Name(name, INITIAL_VALUE, names);
@@ -812,7 +1029,7 @@ int hjbase::HUAJISCRIPTBASE::Huaji_Command_Interpreter(const const_itVecStr* com
                     // must be a name
                     else {
                         if(!declared) {
-                            Signal_Error(SE_UNEXPECTED_TOKEN, command_to_be_executed);
+                            Signal_Error(SE_UNEXPECTED_TOKEN, command);
                             throw syntax_except;
                         }
                         name = *it;
@@ -836,18 +1053,18 @@ int hjbase::HUAJISCRIPTBASE::Huaji_Command_Interpreter(const const_itVecStr* com
         }
 
         case eCMD_NAME_MUTATE: {
-            if(command_to_be_executed->size() < 5) {
-                Signal_Error(SE_REQUIRE_MORE_TOKENS, command_to_be_executed);
+            if(command->size() < 5) {
+                Signal_Error(SE_REQUIRE_MORE_TOKENS, command);
                 Cleanup_If_Exception_Thrown();
                 return VALID_COMMAND_RETURN_CODE;
             }
-            if(command_to_be_executed->at(2)!=CMD_NAME_MUTATE_TO) {
-                Signal_Error(SE_UNEXPECTED_TOKEN, command_to_be_executed);
+            if(command->at(2)!=CMD_NAME_MUTATE_TO) {
+                Signal_Error(SE_UNEXPECTED_TOKEN, command);
                 Cleanup_If_Exception_Thrown();
                 return VALID_COMMAND_RETURN_CODE;
             }
-            std::string name = command_to_be_executed->at(1);
-            const_itVecStr* expr = new const_itVecStr(command_to_be_executed->begin()+3, command_to_be_executed->end()-1);
+            std::string name = command->at(1);
+            const_itVecStr* expr = new const_itVecStr(command->begin()+3, command->end()-1);
             std::string val;
             try {
                 val = Evaluate_Expression(expr);
@@ -865,12 +1082,12 @@ int hjbase::HUAJISCRIPTBASE::Huaji_Command_Interpreter(const const_itVecStr* com
         // Print command 
         case eCMD_PRINT: {
             bool nl_flag = true;
-            for(std::vector<std::string>::const_iterator it=command_to_be_executed->begin()+1;it!=command_to_be_executed->end()-1;++it) {
+            for(std::vector<std::string>::const_iterator it=command->begin()+1;it!=command->end()-1;++it) {
                 if((*it)==NONEWLINE&&nl_flag) {
                     nl_flag = false;
                 }
-                else if((*it)==USE_EXPR_FROM_HERE&&it!=command_to_be_executed->end()-2) {
-                    const_itVecStr* expr = new const_itVecStr(it+1,command_to_be_executed->end()-1);
+                else if((*it)==USE_EXPR_FROM_HERE&&it!=command->end()-2) {
+                    const_itVecStr* expr = new const_itVecStr(it+1,command->end()-1);
                     try {
                         std::cout<<Evaluate_Expression(expr);
                     }
@@ -904,7 +1121,7 @@ int hjbase::HUAJISCRIPTBASE::Huaji_Command_Interpreter(const const_itVecStr* com
             bool condition = false;
 
             try {
-                condition = Find_And_Evaluate_Condition(command_to_be_executed);
+                condition = Find_And_Evaluate_Condition(command);
             }
             catch (const HUAJIBASE_EXCEPTION& huaji_except){
                 Cleanup_If_Exception_Thrown();
@@ -912,7 +1129,7 @@ int hjbase::HUAJISCRIPTBASE::Huaji_Command_Interpreter(const const_itVecStr* com
             }
 
             if(condition) {
-                Block_Execution(command_to_be_executed);
+                Block_Execution(command);
             }
             break;
         }
@@ -923,7 +1140,7 @@ int hjbase::HUAJISCRIPTBASE::Huaji_Command_Interpreter(const const_itVecStr* com
             bool condition = false;
 
             try {
-                condition = Find_And_Evaluate_Condition(command_to_be_executed);
+                condition = Find_And_Evaluate_Condition(command);
             }
             catch (const HUAJIBASE_EXCEPTION& huaji_except){
                 Cleanup_If_Exception_Thrown();
@@ -931,9 +1148,9 @@ int hjbase::HUAJISCRIPTBASE::Huaji_Command_Interpreter(const const_itVecStr* com
             }
 
             while(condition) {
-                Block_Execution(command_to_be_executed);
+                Block_Execution(command);
                 try {
-                    condition = Find_And_Evaluate_Condition(command_to_be_executed);
+                    condition = Find_And_Evaluate_Condition(command);
                 }
                 catch (const HUAJIBASE_EXCEPTION& huaji_except){
                     Cleanup_If_Exception_Thrown();
@@ -946,6 +1163,10 @@ int hjbase::HUAJISCRIPTBASE::Huaji_Command_Interpreter(const const_itVecStr* com
         case eDEB_PRINT_GLOBAL_NAMES: {
             Print_Name_Map(names);
             break;
+        }
+
+        case eDEB_CHECK_EXPECT: {
+            
         }
 
         case eCONFIG_FLOAT_POINT_ENABLE: {
@@ -984,8 +1205,22 @@ int hjbase::HUAJISCRIPTBASE::Huaji_Command_Interpreter(const const_itVecStr* com
             return VALID_COMMAND_RETURN_CODE;
         }
 
+        case eEVALUATE: {
+            const_itVecStr* expr = new const_itVecStr(command->begin()+1,command->end()-2);
+            try {
+                std::cout<<Evaluate_Expression(expr);
+            }
+            catch (const HUAJIBASE_EXCEPTION& huaji_except) {
+                delete expr;
+                Cleanup_If_Exception_Thrown();
+                return VALID_COMMAND_RETURN_CODE;
+            }
+            delete expr;
+            break;
+        }
+
         default: {
-            Signal_Error(IE_UNDEFINED_NAME, command_to_be_executed);
+            Signal_Error(IE_UNDEFINED_NAME, command);
             return INVALID_COMMAND_RETURN_CODE;
         }
 
@@ -995,8 +1230,8 @@ int hjbase::HUAJISCRIPTBASE::Huaji_Command_Interpreter(const const_itVecStr* com
     return VALID_COMMAND_RETURN_CODE;
 }
 
-int hjbase::HUAJISCRIPTBASE::More_On_Command_Level_1(const const_itVecStr* command_to_be_executed) {
-    Signal_Error(IE_UNDEFINED_NAME, command_to_be_executed);
+int hjbase::HUAJISCRIPTBASE::More_On_Command_Level_1(const const_itVecStr* command) {
+    Signal_Error(IE_UNDEFINED_NAME, command);
     return INVALID_COMMAND_RETURN_CODE;
 }
 
@@ -1188,7 +1423,8 @@ std::string hjbase::HUAJISCRIPTBASE::Numerical_Operation_Templated_Helper(const 
                 break;
             }
             case eOP_MULTIPLY: {
-                for(int i=0;i<vals_size;++i) {
+                numerical_ans_val = numerical_vals[0];
+                for(int i=1;i<vals_size;++i) {
                     numerical_ans_val *= numerical_vals[i];
                 }
                 break;
@@ -1333,7 +1569,7 @@ std::string hjbase::HUAJISCRIPTBASE::Numerical_Operation(const std::string& op, 
 }
 
 std::string hjbase::HUAJISCRIPTBASE::More_On_Slice_Operator_Level_1(const const_itVecStr* vals) {
-    throw huaji_except;
+    throw fnld_except;
 }
 
 std::string hjbase::HUAJISCRIPTBASE::Other_Basic_Operation(const std::string& op, int op_key, const const_itVecStr* vals) {
@@ -1394,31 +1630,181 @@ std::string hjbase::HUAJISCRIPTBASE::Other_Basic_Operation(const std::string& op
                 }
                 return ans_val;
             }
+            case eOP_STRLEN: {
+                if(vals->size()!=1) {
+                    Signal_Error(SE_ARITY_MISMATCH, op);
+                    throw eval_except;
+                }
+                return std::to_string(vals->at(0).size());
+            }
             case eOP_SLICE: {
+                /* 
+                    use exception handling mechanism to allow extension on slice operation,
+                    although it might be faster to just use a return code, instead of catching a exception
+                */
                 try {
                     return More_On_Slice_Operator_Level_1(vals);
                 }
-                catch (const HUAJIBASE_EXCEPTION& huaji_except) {
+                catch (const FUNCTION_NOT_OVERLOADED_YET& fnld_except) {
                     int vals_size = vals->size();
+                    // Require at least two arguments
                     if(vals_size>1) {
+                        std::string to_be_sliced = vals->at(0);
+                        // get slice starting position
                         int slice_start = std::stoi(vals->at(1));
+                        // three arguments indicate an ending position also provided
                         if(vals_size==3) {
                             int slice_end = std::stoi(vals->at(2));
-                            return vals->at(0).substr(slice_start, slice_end-slice_start);
+                            if(slice_end<0) {
+                                slice_end = to_be_sliced.size()+slice_end+1;
+                            }
+                            int slice_length = slice_end-slice_start;
+                            if(slice_length<=0) {
+                                Signal_Error(SLE_OUT_OF_RANGE, vals);
+                                throw eval_except;
+                            }
+                            return to_be_sliced.substr(slice_start, slice_length);
                         }
+                        // two arguments, no ending position provided, return that starting position char
                         else if(vals_size==2) {
-                            return std::string(1, vals->at(0).at(slice_start));
+                            return std::string(1, to_be_sliced.at(slice_start));
                         }
                         else {
-                            Signal_Error(SE_ARITY_MISMATCH, vals);
+                            Signal_Error(SE_ARITY_MISMATCH, op);
                             throw syntax_except;
                         }
                     }
                     else {
-                        Signal_Error(SE_ARITY_MISMATCH, vals);
+                        Signal_Error(SE_ARITY_MISMATCH, op);
                         throw syntax_except;
                     }
                 }
+            }
+            case eOP_LIST: {
+                std::string ret_list = EXPR_START;
+                for(std::vector<std::string>::const_iterator it=vals->begin();it!=vals->end();++it) {
+                    // Add quotation mark if *it has space
+                    if(Quotation_Rquired_For_List_Elem(*it)) {
+                        ret_list.push_back(QUOTATION_MARK);
+                        ret_list.append(*it);
+                        ret_list.push_back(QUOTATION_MARK);
+                    }
+                    else {
+                        ret_list.append(*it);
+                    }
+                    ret_list.push_back(' ');
+                }
+                // The last char is a space, but we want it to be cEXPR_END
+                ret_list[ret_list.size()-1] = cEXPR_END;
+                return ret_list;
+            }
+            case eOP_FIRST: {
+                /*
+                    Check how many vals are there, if more than one val, return a list
+                    consists of all first elements in each list. Exception will be thrown if 
+                    any list is empty. Else return the first member of the list
+                */
+                int vals_size = vals->size();
+                if(vals_size==1) {
+                    std::string ret_elem;
+                    std::string this_list = vals->at(0);
+                    std::pair<int, int> first_elem_pos = Get_First_Element_Pos(this_list);
+                    ret_elem = this_list.substr(first_elem_pos.first, first_elem_pos.second);
+                    if(Quotation_Rquired_For_List_Elem(ret_elem)) {
+                        ret_elem.insert(ret_elem.begin(), QUOTATION_MARK);
+                        ret_elem.push_back(QUOTATION_MARK);
+                        return ret_elem;
+                    }
+                    return ret_elem;
+                }
+                else if(vals_size>1) {
+                    std::string ret_list = EXPR_START;
+                    for(std::vector<std::string>::const_iterator it=vals->begin();it!=vals->end();++it) {
+                        std::pair<int, int> first_elem_pos = Get_First_Element_Pos(*it);
+                        std::string to_append = (*it).substr(first_elem_pos.first, first_elem_pos.second);
+                        if(Quotation_Rquired_For_List_Elem(to_append)) {
+                            ret_list.push_back(QUOTATION_MARK);
+                            ret_list.append(to_append);
+                            ret_list.push_back(QUOTATION_MARK);
+                        }
+                        else {
+                            ret_list.append(to_append);
+                        }
+                        ret_list.push_back(' ');
+                    }
+                    ret_list[ret_list.size()-1] = cEXPR_END;
+                    return ret_list;
+                }
+                else {
+                    Signal_Error(SE_ARITY_MISMATCH, op);
+                    throw syntax_except;
+                }
+            }
+            case eOP_REST: {
+                if(vals->size()==1) {
+                    // Need to exclude last quotation mark, so pass include_last_quotaion=true
+                    std::pair<int, int> first_pos = Get_First_Element_Pos(vals->at(0));
+                    return Format_List_String(vals->at(0).substr(first_pos.first+first_pos.second, std::string::npos));
+                }
+                else if(vals->size()>1) {
+                    std::string ret_list = EXPR_START;
+                    for(std::vector<std::string>::const_iterator it=vals->begin();it!=vals->end();++it) {
+                        std::pair<int, int> first_pos = Get_First_Element_Pos(*it);
+                        ret_list.append(Format_List_String((*it).substr(first_pos.first+first_pos.second, std::string::npos)));
+                        ret_list.push_back(' ');
+                    }
+                    ret_list[ret_list.size()-1] = cEXPR_END;
+                    return ret_list;
+                }
+                else {
+                    Signal_Error(SE_ARITY_MISMATCH, op);
+                    throw syntax_except;
+                }
+            }
+            case eOP_CONS: {
+                if(vals->size()!=2) {
+                    Signal_Error(SE_ARITY_MISMATCH, op);
+                    throw syntax_except;
+                }
+                // Put elem to cons at list front
+                std::string ret_list;                       
+                if(Quotation_Rquired_For_List_Elem(vals->at(0))) {
+                    ret_list.push_back(QUOTATION_MARK);
+                    ret_list.append(vals->at(0));
+                    ret_list.push_back(QUOTATION_MARK);
+                }
+                /* 
+                    Append second arg to ret_list, note here we don't check if second arg
+                    is a valid list or not, if not, exception will thrown in Format_List_String
+                */
+                ret_list.push_back(' ');
+                ret_list.append(vals->at(1).substr(1, std::string::npos));
+
+                return Format_List_String(ret_list);
+            }
+            case eOP_APPEND: {
+                std::string ret_list;
+                for(std::vector<std::string>::const_iterator it=vals->begin();it!=vals->end();++it) {
+                    if((*it).front()!=cEXPR_START&&(*it).back()!=cEXPR_END) {
+                        Signal_Error(TE_NOT_LIST, *it);
+                        throw eval_except;
+                    }
+                    // Rip a head and a tail append to ret_list
+                    ret_list.append((*it).substr(1, (*it).size()-2));
+                    // Add a space
+                    ret_list.push_back(' ');
+                }
+                // change last space to cEXPR_END
+                ret_list[ret_list.size()-1] = cEXPR_END;
+                return Format_List_String(ret_list);
+            }
+            case eOP_RESOLVE: {
+                if(vals->size()!=1) {
+                    Signal_Error(SE_ARITY_MISMATCH, vals);
+                    throw syntax_except;
+                }
+
+                return Handle_Val(vals->at(0));
             }
             default: {
                 Signal_Error(IE_UNKNOWN, op);
@@ -1499,6 +1885,9 @@ std::string hjbase::HUAJISCRIPTBASE::Handle_Val(const std::string& name_or_val) 
     else {
         if(Starts_With(name_or_val, STRING_TAG)) {
             return name_or_val.substr(STRING_TAG.size(),std::string::npos);
+        }
+        else if(Starts_With(name_or_val, LIST_TAG)) {
+            return name_or_val.substr(LIST_TAG.size(),std::string::npos);
         }
         else if(Is_Numerical(name_or_val)) {
             return name_or_val;

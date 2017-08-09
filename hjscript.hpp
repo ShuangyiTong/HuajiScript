@@ -1,7 +1,9 @@
 #pragma once
 
 #include <vector>
+#include <list>
 #include <string>
+#include <sstream>
 #include <iostream>
 #include <exception>
 #include <fstream>
@@ -9,10 +11,6 @@
 #include <map>
 #include <utility>
 #include <queue>
-
-
-#define VALID_COMMAND_RETURN_CODE 1
-#define INVALID_COMMAND_RETURN_CODE 0
 
 /*  
     Comment this directive to improve performance
@@ -71,7 +69,7 @@ namespace hjbase {
             const std::string SEPARATOR = ",";
             const char cSEPARATOR = ',';
             const char QUOTATION_MARK = '"';
-            const char NOSUBST = '@';
+            const char NOSUBST = '&';
             const std::string SLICER = ":";
             const char cSLICER = ':';
             const std::string LIST_DIRECT = "`";
@@ -164,6 +162,17 @@ namespace hjbase {
                 { OP_RESOLVE, eOP_RESOLVE },
             };
         }
+        namespace builtin_func {
+            const std::string FUNC_CHECK_EXPECT = "check-expect";
+
+            enum {
+                eFUNC_CHECK_EXPECT,
+            };
+
+            const std::map<std::string, int> HJBASE_BUILTIN_FUNC = {
+                { FUNC_CHECK_EXPECT, eFUNC_CHECK_EXPECT },
+            };
+        }
         namespace commands_names {
             const std::string CMD_NAME_DECLARE = "declare";
             const std::string CMD_NAME_MUTATE = "mutate";
@@ -171,6 +180,8 @@ namespace hjbase {
             const std::string CMD_PRINT = "print";
             const std::string CMD_IF = "if";
             const std::string CMD_WHILE = "while";
+            const std::string CMD_DEFINE = "define";
+            const std::string CMD_RETURN = "return";
 
             const std::string CONFIG_FLOAT_POINT_ENABLE = "fp_on";
             const std::string CONFIG_FLOAT_POINT_DISABLE = "fp_off";
@@ -178,9 +189,7 @@ namespace hjbase {
             const std::string CONFIG_DEBUG_MODE_DISABLE = "debug_off";
             const std::string CONFIG_RAW_STRING_ENABLE = "rawstr_on";
             const std::string CONFIG_RAW_STRING_DISABLE = "rawstr_off";
-
-            const std::string DEB_PRINT_GLOBAL_NAMES = "print_global_names";
-            const std::string DEB_CHECK_EXPECT = "check-expect";
+            const std::string DEB_PRINT_NAMES = "print_names";
 
             const std::string EVALUATE = "(";
 
@@ -190,14 +199,15 @@ namespace hjbase {
                 eCMD_PRINT,
                 eCMD_IF,
                 eCMD_WHILE,
+                eCMD_DEFINE,
+                eCMD_RETURN,
                 eCONFIG_FLOAT_POINT_ENABLE,
                 eCONFIG_FLOAT_POINT_DISABLE,
                 eCONFIG_DEBUG_MODE_ENABLE,
                 eCONFIG_DEBUG_MODE_DISABLE,
                 eCONFIG_RAW_STRING_ENABLE,
                 eCONFIG_RAW_STRING_DISABLE,
-                eDEB_PRINT_GLOBAL_NAMES,
-                eDEB_CHECK_EXPECT,
+                eDEB_PRINT_NAMES,
                 eEVALUATE,
             };
 
@@ -207,14 +217,15 @@ namespace hjbase {
                 { CMD_PRINT, eCMD_PRINT },
                 { CMD_IF, eCMD_IF },
                 { CMD_WHILE, eCMD_WHILE },
+                { CMD_DEFINE, eCMD_DEFINE },
+                { CMD_RETURN, eCMD_RETURN },
                 { CONFIG_FLOAT_POINT_ENABLE, eCONFIG_FLOAT_POINT_ENABLE },
                 { CONFIG_FLOAT_POINT_DISABLE, eCONFIG_FLOAT_POINT_DISABLE },
                 { CONFIG_DEBUG_MODE_ENABLE, eCONFIG_DEBUG_MODE_ENABLE },
                 { CONFIG_DEBUG_MODE_DISABLE, eCONFIG_DEBUG_MODE_DISABLE },
                 { CONFIG_RAW_STRING_ENABLE, eCONFIG_RAW_STRING_ENABLE },
                 { CONFIG_RAW_STRING_DISABLE, eCONFIG_RAW_STRING_DISABLE },
-                { DEB_PRINT_GLOBAL_NAMES, eDEB_PRINT_GLOBAL_NAMES },
-                { DEB_CHECK_EXPECT, eDEB_CHECK_EXPECT },
+                { DEB_PRINT_NAMES, eDEB_PRINT_NAMES },
                 { EVALUATE, eEVALUATE },
             };
         }
@@ -224,10 +235,14 @@ namespace hjbase {
             const std::string SE_MISSING_EXPR = "Syntax Error: Missing Expression";
             const std::string SE_UNABLE_TO_PROCESS_EXPR = "Syntax Error: Unable to process expression. Expression is empty or unknown operator";
             const std::string SE_ARITY_MISMATCH = "Syntax Error: Arity mismatch";
+            const std::string SE_UNRECOGNISED_FLAG = "Syntax Error: Unrecognised flag";
 
             const std::string IE_UNDEFINED_NAME = "Internal Error: Name undefined";
-            const std::string IE_UNKNOWN = "Internal Error: Unknown error";
+            const std::string IE_UNKNOWN = "Internal Error: Unknown error, contact developers for more information";
             const std::string IE_CONST_ITVECSTR_OOR = "Internal Error: const_itVecStr out of range";
+            const std::string IE_INSERTION_FAILURE = "Internal Error: Failed to insert name into targeted map, contact developers for more information";
+            const std::string IE_INTERNAL_QUERY_FAILED = "Internal Error: Internal query failed";
+            const std::string IE_ACCESSING_UNDEFINED_STACK_FRAME = "Internal Error: Accessing undefined stack frame";
 
             const std::string NE_CONVERSION_FAILED = "Numerical Exception: Unable to convert to numerical value";
             const std::string NE_OUT_OF_RANGE = "Numerical Exception: Numerical value out of range";
@@ -239,11 +254,17 @@ namespace hjbase {
 
             const std::string SLE_OUT_OF_RANGE = "Slice out of range";
 
+            const std::string SEF_NOT_ALLOWED = "Side Effects Error: This function has side effects, please allow side effects to execute this function";
+            const std::string SEF_REQUIRED = "Side Effects Error: Functions with side effects required here";
+
             const std::string TE_NOT_LIST = "Type Error: Not a list";
+            const std::string TE_NOT_FUNC = "Type Error: Not a function";
 
             const std::string LE_EMPTY = "List Error: Unable to perform operation on empty list";
             const std::string LE_INCOMPLETE = "List Error: Incomplete list";
 
+            const std::string DEB_MODE_ON = "Debug Mode On...";
+            const std::string DEB_MODE_OFF = "Debug Mode Off...";
             const std::string DEB_COMMAND_START = "Executing command: ";
             const std::string DEB_COMMAND_END = "Command execution complete: ";
             const std::string DEB_EXPR_START = "Evaluating expression: ";
@@ -264,31 +285,37 @@ namespace hjbase {
 
             const std::string BOOL_TRUE = "1";
             const std::string BOOL_FALSE = "0";
-            const std::string INITIAL_VALUE = "NONE";
 
-            const std::string CONSOLE_INFO_STRING = "Huaji Script Interpreter v1.04";
+            const std::string CONSOLE_INFO_STRING = "Huaji Script Interpreter v1.05";
             const std::string COMMAND_LINE_PROMPT = "OvO >>> ";
+
+            const std::string UNDEFINED_NAME = "__undefined__";
 
             const std::string NONEWLINE = "--nonl";
             const std::string USE_EXPR_FROM_HERE = "--expr";
+            const std::string OVERLOADING_FLAG = "--overload";
+            const std::string STACK_FLAG = "--stack";
+            const std::string NAMESPACE_FLAG = "--namespace";
         }
         namespace type_tag {
             const std::string STRING_TAG = "#:string";
             const std::string LIST_TAG = "#:list";
+            const std::string FUNC_TAG = "#:func";
+            const std::string UNDEFINED_TYPE = "#:undefined";
         }
     }
 
     namespace ufunc {
 
-        void Signal_Error(const std::string& error_msg, const const_itVecStr* error_part);
+        void Signal_Error(const std::string& error_msg, const const_itVecStr& error_part);
 
         void Signal_Error(const std::string& error_msg, const std::string& error_part);
 
-        void Print_IVSTR(const const_itVecStr* iVstr) ;
+        void Print_IVSTR(const const_itVecStr& iVstr) ;
 
-        void Highlight_Error_Part(const const_itVecStr* iVstr) ;
+        void Highlight_Error_Part(const const_itVecStr& iVstr) ;
 
-        bool Check_If_Float_Point(const const_itVecStr* vals);
+        bool Check_If_Float_Point(const const_itVecStr& vals);
 
         std::pair<int, int> Get_First_Element_Pos(const std::string& this_list);
 
@@ -299,6 +326,8 @@ namespace hjbase {
         bool Is_Numerical(const std::string& this_str);
 
         bool Quotation_Rquired_For_List_Elem(const std::string& this_str);
+
+        std::string Convert_Ptr_To_Str(void* ptr);
 
     }
 
@@ -316,10 +345,15 @@ namespace hjbase {
             }
         };
 
-        // A example where this is used in hjbase::HUAJISCRIPTBASE::More_On_Slice_Operator_Level_1(const const_itVecStr*)
-        class FUNCTION_NOT_OVERLOADED_YET : public HUAJIBASE_EXCEPTION {
+        class SIDE_EFFECTS_EXCEPTION : public HUAJIBASE_EXCEPTION {
             virtual const char* what() const noexcept {
-                return "this virtual function has not been overloaded";
+                return "side effects not allowed";
+            }
+        };
+
+        class TYPE_EXCEPTION : public HUAJIBASE_EXCEPTION {            
+            virtual const char* what() const noexcept {
+                return "type mismatch";
             }
         };
 
@@ -342,11 +376,12 @@ namespace hjbase {
         };
 
         const HUAJIBASE_EXCEPTION huaji_except;
-        const FUNCTION_NOT_OVERLOADED_YET fnld_except;
+        const TYPE_EXCEPTION type_except;
         const EVALUATION_EXCEPTION eval_except;
         const SYNTAX_EXCEPTION syntax_except;
         const NAME_EXCEPTION name_except;
         const TOKEN_EXCEPTION token_except;
+        const SIDE_EFFECTS_EXCEPTION side_effects_except;
     }
 
     class LISTFORMATTER {
@@ -367,7 +402,7 @@ namespace hjbase {
     class HUAJITOKENIZER {
         public:
 
-            HUAJITOKENIZER(std::string file_name);
+            HUAJITOKENIZER(std::string& file_name);
             HUAJITOKENIZER();
             ~HUAJITOKENIZER();
 
@@ -385,9 +420,27 @@ namespace hjbase {
             class LISTFORMATTER* lst_formatter;
     };
 
+    class FUNC {
+        public:
+            
+            FUNC(bool with_side_effects, const const_itVecStr& body_iVstr, 
+                 const std::map<std::string, std::string>* stack_map, const std::list<std::string>* arg_names);
+            ~FUNC();
+
+            std::map<std::string, std::string>* Get_Stack_Frame_Template_Copy_On_Heap() const;
+            std::list<std::string> Get_Var_Names() const;
+            const_itVecStr Get_Fbody();
+            bool has_side_effects;
+
+        private:
+            const_itVecStr* fbody;
+            const std::vector<std::string>* fbody_container;
+            const std::list<std::string>* var_names;
+            const std::map<std::string, std::string>* stack_frame_template;
+    };
+
 
     class HUAJISCRIPTBASE {
-
         public:
 
             HUAJISCRIPTBASE(std::string file_name);
@@ -403,46 +456,58 @@ namespace hjbase {
 
         protected:
 
-            int More_On_Command_Level_1(const const_itVecStr* command);
+            std::pair<int, bool> More_On_Command_Level_1(const const_itVecStr& command);
 
-            std::string More_On_Expression_Level_1(const std::string& op, const const_itVecStr* vals);
+            std::pair<std::string, bool> More_On_Expression_Level_1(const std::string& op, const const_itVecStr& vals);
 
-            std::string More_On_Names_Query_Level_1(const std::string& name);
+            std::pair<std::string, bool> More_On_Names_Query_Level_1(const std::string& name);
 
-            std::string More_On_Slice_Operator_Level_1(const const_itVecStr* vals);
+            std::pair<std::string, bool> More_On_Slice_Operator_Level_1(const const_itVecStr& vals);
 
             void More_Cleanup_Level_1();
             
-            std::string Evaluate_Expression(const_itVecStr* p_vec_str);
+            std::string Evaluate_Expression(const const_itVecStr& expr);
+            
+            std::pair<std::vector<std::string>::const_iterator, std::vector<std::string>::const_iterator>
+            Get_Expr_Position_Iterators(const const_itVecStr& iVstr);
 
-            bool Find_And_Evaluate_Condition(const const_itVecStr* commands_block);
+            std::string Find_And_Evaluate_Expression(const const_itVecStr& iVstr);
 
-            void Block_Execution(const const_itVecStr* commands_block);
+            int Block_Execution(const const_itVecStr& commands_block);
 
-            void Declare_Name(const std::string& name, const std::string& val, std::map<std::string, std::string>* target_scope_names);
+            void Declare_Name(const std::string& name, const std::string& val);
 
-            void Mutate_Name(const std::string& name, const std::string& val, std::map<std::string, std::string>* target_scope_names);
+            void Mutate_Name(const std::string& name, const std::string& val);
 
-            std::string Resolve_Name(const std::string& name, const std::map<std::string, std::string>* target_scope_names);
+            std::string Resolve_Name(const std::string& name);
 
-            void Cleanup_If_Exception_Thrown();
+            void Cleanup_If_Exception_Thrown(int reverted_ast_depth=0);
+
+            void Side_Effects_Guard(std::string func_name_with_side_effects=cnt::miscellaneous::UNDEFINED_NAME);
         
         private:
+        
+            std::vector<std::pair<std::string, std::string>> General_Name_Declaring_Syntax_Parser(const const_itVecStr& iVstr, bool from_func_call=false);
+
+            void Push_Stack_Frame(std::map<std::string, std::string>* preset_stack_frame);
+
+            void Pop_Stack_Frame();
 
             template <typename T>
-            std::string Numerical_Operation_Templated_Helper(const std::string& op, int op_key, int vals_size, int T_name, const const_itVecStr* vals);
+            std::string Numerical_Operation_Templated_Helper(const std::string& op,
+                                                             int op_key, int vals_size, int T_name, const const_itVecStr& vals);
 
-            std::string Numerical_Operation(const std::string& op, int op_key, const const_itVecStr* vals);
+            std::string Numerical_Operation(const std::string& op, int op_key, const const_itVecStr& vals);
 
             std::string Handle_Val(const std::string& name_or_val);
 
             void Print_Name_Map(const std::map<std::string, std::string>* names_map);
 
-            std::string Other_Basic_Operation(const std::string& op, int op_key, const const_itVecStr* vals);
+            std::string Other_Basic_Operation(const std::string& op, int op_key, const const_itVecStr& vals);
             
-            std::string Basic_Operation(const std::string& op, const const_itVecStr* vals);
+            std::string Apply_Function(const std::string& op, const const_itVecStr& vals);
 
-            void Print_Debug_Info(const std::string& info, int ast_depth_change, const const_itVecStr* node);
+            void Print_Debug_Info(const std::string& info, int ast_depth_change, const const_itVecStr& node);
 
             void Print_Debug_Info(const std::string& info, int ast_depth_change, const std::string& node);
 
@@ -452,13 +517,17 @@ namespace hjbase {
             
             int Take_One_Token(std::vector<std::string>::const_iterator token_it);
 
-            int Huaji_Command_Interpreter(const const_itVecStr* command);
+            int Huaji_Command_Interpreter(const const_itVecStr& command);
 
-            std::map<std::string, std::string>* names;
+            std::vector<std::map<std::string, std::string>*>* names_stack;
 
             void Constructor_Helper();
 
-            class HUAJITOKENIZER* tokenizer;
+            std::map<std::string, FUNC*>* func_pool;
+
+            std::string temp_return_val;
+
+            HUAJITOKENIZER* tokenizer;
 
             /*
                 collect_status is used by Collect_Tokens to identify if a command is complete
@@ -466,6 +535,6 @@ namespace hjbase {
             */
             int collect_status, collect_length, current_ast_depth;
 
-            bool enable_float_point, enable_debug_mode, enable_raw_string, is_console;
+            bool enable_float_point, enable_debug_mode, enable_raw_string, is_console, allow_side_effects;
     };
 }

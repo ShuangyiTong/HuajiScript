@@ -1,0 +1,4 @@
+declare i;
+if(= i "NONE") {
+    print "yes";
+}

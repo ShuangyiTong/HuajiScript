@@ -1,0 +1,5 @@
+define (cons2 first second rest) (
+    cons first (cons second rest)
+);
+
+print --expr (cons2 1 2 `(3));

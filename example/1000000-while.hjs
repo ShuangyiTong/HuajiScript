@@ -1,0 +1,8 @@
+declare x=0;
+fp_off;
+while(< x 1000000) {
+    //print x;
+    mutate x to (+ x 1);
+}
+print "completed";
+print "x=" x;

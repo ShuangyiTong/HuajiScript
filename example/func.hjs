@@ -1,0 +1,13 @@
+debug_on;
+define printthree(a,b=7,c) {
+    define printone(name, val) {
+        print name "=" val;
+    }
+    printone("a", a);
+    printone("b", b);
+    printone("c", c);
+}
+
+declare val=1;
+
+printthree(c=1,val,a=3);

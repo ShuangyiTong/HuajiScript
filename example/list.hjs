@@ -1,0 +1,56 @@
+debug_on;
+/* test direct list construction */
+print "\nDIRECT_LIST_CONSTRUCTION\n";
+declare lst1=`(1   2 3 4 5 6), lst2=`( 1 2 4   5 6   "a b   c"ab   );
+print lst1;                     // (1 2 3 4 5 6)
+print lst2;                     // (1 2 4 5 6 "a b   c" ab)
+
+/* test indirect list construction */
+print "\nINDIRECT_LIST_CONSTRUCTION\n";
+declare lst3='(1 (+ 1 1) (+ 1 2) (+ 2 3)), lst4='("abc123"   4562 (* 3 4.5) (strapp "abc " "efg"));
+print lst3;                     // (1 2 3 5)
+print lst4;                     // (abc123 4562 13.500000 "abc efg")
+
+/* test first */
+print "\nTEST_FIRST\n";
+declare lst5='('((+ 1 1))), lst6="(        \"I have space\" 2 3)", lst8='(`("I have space"));
+print --expr (first lst3);      // 1
+print --expr (first lst4);      // abc123
+print --expr (first lst5);      // (2)
+print --expr (first (first lst5)); // 2
+print --expr (first lst1 lst2 lst3 lst4 lst5 lst6); // (1 1 1 abc123 (2) "I have space")
+print --expr (first lst6);      // "I have space"
+print --expr (first "(abcd )"); // abcd
+print --expr (first lst6 lst8); // ("I have space" ("I have space"))
+print --expr (first `());       // List Error: Unable to perform operation on empty list
+print --expr (first lst1 lst2 lst3 "()"); // List Error: Unable to perform operation on empty list
+print --expr (first "(1");      // Type Error: Not a list
+print --expr (first);           // Syntax Error: Arity mismatch
+
+/* if someone really wants to use quotation mark in a list element, an alternative way is */
+declare quote_elem = "quote\"and quote'", lst7="(\"1\")";
+print --expr (first lst7);      // "1"
+print --expr (resolve (first `(quote_elem))); // quote"and quote'
+
+/* test rest */
+print "\nTEST_REST\n";
+print --expr (rest lst1);       // (2 3 4 5 6)
+print --expr (rest lst5);       // ()
+print --expr (rest "()");       // List Error: Unable to perform operation on empty list
+print --expr (rest lst6);       // （2 3）
+print --expr (rest lst1 lst2 lst3 lst4 lst5 lst6); // ((2 3 4 5 6) (2 4 5 6 "a b   c" ab) (2 3 5) (4562 13.500000 "abc efg") () (2 3))
+print --expr (rest);            // Syntax Error: Arity mismatch
+print --expr (rest "()");       // List Error: Unable to perform operation on empty list
+
+/* test cons */
+print "\nTEST_CONS\n";
+print --expr (cons 10 lst1);    // (10 1 2 3 4 5 6)
+print --expr (cons " I   have spaces " lst6); // (" I   have spaces " "I have space" 2 3)
+print --expr (cons lst1 lst2);
+
+/* test append */
+print "\nTEST_APPEND\n";
+print --expr (append lst1 lst2 lst3 lst4 lst5 lst6 lst7 lst8);
+print --expr (append lst7 lst8);
+print --expr (append lst7);
+print --expr (append `());

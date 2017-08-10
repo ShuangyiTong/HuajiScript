@@ -1,0 +1,2 @@
+declare line="abc",line2="efg";
+print --expr (strapp line line2);

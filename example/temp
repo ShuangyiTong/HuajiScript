@@ -1,0 +1,12 @@
+debug_on;
+/* test direct list construction */
+print "\nDIRECT_LIST_CONSTRUCTION\n";
+declare lst1=`(1   2 3 4 5 6), lst2=`( 1 2 4   5 6   "a b   c"ab   );
+print lst1;                     // (1 2 3 4 5 6)
+print lst2;                     // (1 2 4 5 6 "a b   c" ab)
+
+/* test indirect list construction */
+print "\nINDIRECT_LIST_CONSTRUCTION\n";
+declare lst3='(1 (+ 1 1) (+ 1 2) (+ 2 3)), lst4='("abc123"   4562 (* 3 4.5) (strapp "abc " "efg"));
+print lst3;                     // (1 2 3 5)
+print lst4;                     // (abc123 4562 13.500000 "abc efg")

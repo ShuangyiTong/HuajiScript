@@ -1,0 +1,7 @@
+rawstr_on;
+print --expr (slice abcderf 1 5);
+print --expr abcdefghijk[2:5];
+rawstr_off;
+declare str="abcdefghj";
+print --expr str[3];
+print --expr str[0:-1];

@@ -16,7 +16,7 @@ I am using clang 4.0.0, g++ 7.1.1 should be fine too. (actually any C++14 compil
 
     clang++ -std=c++14 hjscript.cpp driver.cpp -o hjscript -O3
 
-Check test folder to see what it can do!
+Check example folder to see what it can do!
 
 ## Things to do
 

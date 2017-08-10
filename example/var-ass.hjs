@@ -1,0 +1,3 @@
+rawstr_on;
+declare a=10,b=20,c;
+print --expr (= 1 NONE);

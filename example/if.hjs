@@ -1,0 +1,11 @@
+debug_on;
+declare cond=3;
+if cond {
+    mutate cond to (- cond 1);
+    if cond {
+        mutate cond to (- cond 1);
+        if cond {
+            (first);
+        }
+    }
+}

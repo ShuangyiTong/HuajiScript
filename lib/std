@@ -1,0 +1,8 @@
+config debug on;
+
+declare true = (lambda (t f) t);
+declare false = (lambda (t f) f);
+
+declare if = (lambda (b t f) ((b (lambda (y) t) (lambda (y) f)) 0));
+
+print --expr (if true 1 2);

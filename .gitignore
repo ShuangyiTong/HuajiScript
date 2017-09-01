@@ -1,3 +1,5 @@
 hjscript
 .vscode/*
 hjscript.exe
+*.s
+example/temp

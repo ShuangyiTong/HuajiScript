@@ -1,0 +1,22 @@
+init VEC2;
+define __init__@VEC2(self, var_a, var_b) {
+    declare var_a@self=var_a, var_b@self=var_b;
+}
+
+define printVec2(self) {
+    print self;
+    info object_stack;
+    print var_a@self;
+    print var_b@self;
+}
+
+declare vec2_1=(init "VEC2");
+
+__init__@VEC2(vec2_1, 1, 2);
+
+printVec2(vec2_1);
+
+print --expr (mem-ref "var_a" vec2_1);
+
+config gc off;
+delete vec2_1;

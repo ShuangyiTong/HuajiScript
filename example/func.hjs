@@ -1,13 +1,22 @@
-debug_on;
+//config gc off;
 define printthree(a,b=7,c) {
     define printone(name, val) {
         print name "=" val;
     }
+    info func_pool;
     printone("a", a);
     printone("b", b);
     printone("c", c);
+    config gc off;
+    delete printone;
+    config gc on;
 }
 
 declare val=1;
 
-printthree(c=1,val,a=3);
+while (< val 3) {
+    info name;
+    printthree(c=1,val,a=3);
+    info name;
+    mutate val to (+ val 1);
+}

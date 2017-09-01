@@ -1,5 +1,6 @@
 declare x=0;
-fp_off;
+config fp off;
+config gc off;
 while(< x 1000000) {
     //print x;
     mutate x to (+ x 1);

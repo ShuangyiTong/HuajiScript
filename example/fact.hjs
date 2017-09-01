@@ -1,0 +1,88 @@
+//config debug on;
+
+define fact(n, fact/r) {
+    if(= n 1) {
+        return 1;
+    }
+    return (* n (fact/r (- n 1) fact/r));
+}
+
+print --expr (fact 5 fact);
+
+define --overload fact(cur, n, fact/r) {
+    if(< cur n) {
+        return (* cur (fact/r (+ cur 1) n fact/r));
+    }
+    return n;
+}
+
+print --expr (fact 1 5 fact);
+
+define --overload fact(cur, n) {
+    if(< cur n) {
+        return (* cur (fact&0 (+ cur 1) n));
+    }
+    return n;
+}
+
+print --expr (fact 1 5);
+
+fact(n=5, cur=1);
+
+print --expr (return-val);
+
+init algo;
+
+define fact@algo(cur, n) {
+    if(< cur n) {
+        return (* cur (fact@algo (+ cur 1) n));
+    }
+    return n;
+}
+
+print --expr (fact@algo 1 5);
+
+define make-fact(n) {
+    define fact-n(fact/r, cur=1, n=n) {
+        if(< cur n) {
+            return (* cur (fact/r fact/r (+ cur 1)));
+        }
+        return n;
+    }
+    return fact-n;
+}
+
+declare fact5=(make-fact 5);
+
+print --expr (fact5 fact5);
+
+define make-fact/r(n) {
+    define fact-rr(fact/r, cur=1, n=n) {
+        if(< cur n) {
+            return (* cur (fact/r fact/r (+ cur 1)));
+        }
+        return n;
+    }
+    define fact-n(fact/r=fact-rr, cur=1, n=n) {
+        if(< cur n) {
+            return (* cur (fact/r fact/r (+ cur 1)));
+        }
+        return n;
+    }
+    return fact-n;
+}
+
+declare fact/r5=(make-fact/r 5);
+
+print --expr (fact/r5);
+
+define fact-loop(n) {
+    declare i=1, res=1;
+    while (<= i n) {
+        mutate res to (* i res);
+        mutate i to (+ i 1);
+    }
+    return res;
+}
+
+print --expr (fact-loop 5);

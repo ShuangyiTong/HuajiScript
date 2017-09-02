@@ -1,8 +1,19 @@
 config debug on;
 
-declare true = (lambda (t f) t);
-declare false = (lambda (t f) f);
+init std;
 
-declare if = (lambda (b t f) ((b (lambda (y) t) (lambda (y) f)) 0));
+declare true@std = (lambda (t f) (
+    lazy t
+));
 
-print --expr (if true 1 2);
+declare false@std = (lambda (t f) (
+    lazy f
+));
+
+declare if@std = (lambda --lazy (b t f) (
+    (lazy b) t f
+));
+
+define --lazy (make-lazy@std expr) expr;
+
+print --expr (true@std (make-lazy@std 1) (make-lazy@std (/ 1 0)));

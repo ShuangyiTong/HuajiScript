@@ -666,7 +666,7 @@ std::string hjbase::HUAJITOKENIZER::Get_One_Token() {
 }
 
 hjbase::FUNC::FUNC(bool with_side_effects, const const_itVecStr& body_iVstr, 
-                   const std::map<std::string, std::string>* stack_map, const std::list<std::string>* arg_names)
+                   const std::map<std::string, std::string>* stack_map, const std::list<std::string>* arg_names, bool lazy)
     // use std::vector::vector range constructor
     : fbody_container (new std::vector<std::string>(body_iVstr.begin(), body_iVstr.end()))
     /* 
@@ -676,7 +676,8 @@ hjbase::FUNC::FUNC(bool with_side_effects, const const_itVecStr& body_iVstr,
     */
     , stack_frame_template(stack_map)
     , has_side_effects (with_side_effects)
-    , var_names (arg_names) {
+    , var_names (arg_names) 
+    , is_lazy (lazy) {
     fbody = new const_itVecStr(fbody_container->begin(), fbody_container->end());
 }
 
@@ -716,12 +717,12 @@ void hjbase::HUAJISCRIPTBASE::Constructor_Helper() {
     names_stack = new std::vector<std::map<std::string, std::string>*>;
     gc_records = new std::map<std::string, std::list<std::string>>;
     temp_return_val = UNDEFINED_NAME;
-    GC_New_Record(TEMP_RET_VAL_NAME, UNDEFINED_NAME);
     namespace_pool = new std::map<std::string, std::map<std::string, std::string>*>;
     Push_Stack_Frame(new std::map<std::string, std::string>);
     func_pool = new std::map<std::string, FUNC*>;
     object_pool = new std::map<std::string,std::map<std::string,std::string>*>;
     object_stack = new std::vector<std::map<std::string, std::string>*>;
+    lazy_expr_pool = new std::map<std::string, const_itVecStr*>;
 }
 
 hjbase::HUAJISCRIPTBASE::HUAJISCRIPTBASE(std::string file_name) 
@@ -760,6 +761,10 @@ hjbase::HUAJISCRIPTBASE::~HUAJISCRIPTBASE() {
         delete it->second;
     }
     delete namespace_pool;
+    for(std::map<std::string, const_itVecStr*>::iterator it=lazy_expr_pool->begin();it!=lazy_expr_pool->end();++it) {
+        delete it->second;
+    }
+    delete lazy_expr_pool;
     delete tokenizer;
 }
 
@@ -838,15 +843,26 @@ void hjbase::HUAJISCRIPTBASE::GC_Delete_Record(const std::string& name, const st
 }
 
 void hjbase::HUAJISCRIPTBASE::GC_New_MultiRecords(const std::map<std::string, std::string>* names) {
-    for(std::map<std::string, std::string>::const_iterator name_it=names->begin();
-        name_it!=names->end();++name_it) {
-        GC_New_Record(name_it->first, name_it->second);
+    if(enable_gc) {
+        for(std::map<std::string, std::string>::const_iterator name_it=names->begin();
+            name_it!=names->end();++name_it) {
+            GC_New_Record(name_it->first, name_it->second);
+        }
     }
 }
 
 void hjbase::HUAJISCRIPTBASE::GC_Delete_MultiRecords(const std::map<std::string, std::string>* names) {
-    for(std::map<std::string, std::string>::const_iterator name_it=names->begin();
-        name_it!=names->end();++name_it) {
+    if(enable_gc) {
+        for(std::map<std::string, std::string>::const_iterator name_it=names->begin();
+            name_it!=names->end();++name_it) {
+            GC_Delete_Record(name_it->first, name_it->second);
+        }
+    }
+}
+
+void hjbase::HUAJISCRIPTBASE::GC_Delete_MultiRecords(const std::vector<std::pair<std::string, std::string>>& names) {
+    for(std::vector<std::pair<std::string, std::string>>::const_iterator name_it=names.begin();
+        name_it!=names.end();++name_it) {
         GC_Delete_Record(name_it->first, name_it->second);
     }
 }
@@ -887,6 +903,21 @@ void hjbase::HUAJISCRIPTBASE::Delete_Object_Object(const std::string& object_ptr
     return;
 }
 
+void hjbase::HUAJISCRIPTBASE::Delete_Lazy_Object(const std::string& lazy_ptrStr) {
+    std::map<std::string, const_itVecStr*>::const_iterator lazy_it
+        = lazy_expr_pool->find(lazy_ptrStr);
+
+    if(lazy_it==lazy_expr_pool->end()) {
+        Signal_Error(IE_NOT_DELETABLE, lazy_ptrStr);
+        return;
+    }
+
+    delete lazy_it->second;
+    lazy_expr_pool->erase(lazy_it);
+
+    return;
+}
+
 void hjbase::HUAJISCRIPTBASE::More_On_Delete_Object_Level_1(const std::string& ref_val, int type_code) {
     Signal_Error(IE_NOT_DELETABLE, ref_val);
     return;
@@ -900,6 +931,10 @@ void hjbase::HUAJISCRIPTBASE::Delete_Internal_Object(const std::string& ref_val,
         }
         case OBJECT_TAG_CODE: {
             Delete_Object_Object(ref_val);
+            break;
+        }
+        case LAZY_TAG_CODE: {
+            Delete_Lazy_Object(ref_val);
             break;
         }
         default: {
@@ -927,14 +962,24 @@ hjbase::HUAJISCRIPTBASE::General_Name_Declaring_Syntax_Parser(const const_itVecS
             std::vector<std::string>::const_iterator expr_begin_it = it+1;
             // expr_begin_it needs to be smaller than end()
             if(expr_begin_it>=iVstr.end()) {
+                GC_Delete_MultiRecords(ret_vec);
                 Signal_Error(SE_UNEXPECTED_TOKEN, iVstr);
                 throw syntax_except;
             }
             std::vector<std::string>::const_iterator expr_end_it = it+2;
+            int unclosed_braces = 0;
+            if(*expr_begin_it==EXPR_START) {
+                ++unclosed_braces;
+            }
             for(it=expr_end_it;it<iVstr.end();++it) {
-                // expr_end_it should be it + 1 as it is excluded
                 expr_end_it = it;
-                if(*it==SEPARATOR) {
+                if(*it==EXPR_START) {
+                    ++unclosed_braces;
+                }
+                else if(*it==EXPR_END) {
+                    --unclosed_braces;
+                }
+                else if(*it==SEPARATOR&&!unclosed_braces) {
                     break;
                 }
             }
@@ -948,16 +993,20 @@ hjbase::HUAJISCRIPTBASE::General_Name_Declaring_Syntax_Parser(const const_itVecS
             val = Evaluate_Expression(expr);
             // Push into return vector
             ret_vec.push_back(std::pair<std::string, std::string>(name, val));
+            GC_New_Record(name, val);
             name_already_used = true;
         }                    
         else if(*it==SEPARATOR) {
             if(name_already_used) {
+                GC_Delete_MultiRecords(ret_vec);
                 Signal_Error(SE_UNEXPECTED_TOKEN, iVstr);
                 throw syntax_except;
             }
             if(from_func_call) {
                 // Here name should be val, we add this option to reduce code, as the syntax is the same, but this way of naming variable is incorrect.
-                ret_vec.push_back(std::pair<std::string, std::string>(UNDEFINED_TYPE, Handle_Val(name)));
+                std::string val = Handle_Val(name);
+                ret_vec.push_back(std::pair<std::string, std::string>(UNDEFINED_NAME, val));
+                GC_New_Record(UNDEFINED_NAME, val);
             }
             else {
                 ret_vec.push_back(std::pair<std::string, std::string>(name, UNDEFINED_TYPE));
@@ -967,6 +1016,7 @@ hjbase::HUAJISCRIPTBASE::General_Name_Declaring_Syntax_Parser(const const_itVecS
         // must be a name
         else {
             if(!name_already_used) {
+                GC_Delete_MultiRecords(ret_vec);
                 Signal_Error(SE_UNEXPECTED_TOKEN, iVstr);
                 throw syntax_except;
             }
@@ -997,7 +1047,9 @@ hjbase::HUAJISCRIPTBASE::General_Name_Declaring_Syntax_Parser(const const_itVecS
     // Last name not pushed into vector
     if(!name_already_used) {
         if(from_func_call) {
-            ret_vec.push_back(std::pair<std::string, std::string>(UNDEFINED_TYPE, Handle_Val(name)));
+            std::string val = Handle_Val(name);
+            ret_vec.push_back(std::pair<std::string, std::string>(UNDEFINED_NAME, val));
+            GC_New_Record(UNDEFINED_NAME, val);
         }
         else {
             ret_vec.push_back(std::pair<std::string, std::string>(name, UNDEFINED_TYPE));
@@ -1087,6 +1139,8 @@ void hjbase::HUAJISCRIPTBASE::Print_Internal_Pointer_Map(const typename std::map
 template void hjbase::HUAJISCRIPTBASE::Print_Internal_Pointer_Map<hjbase::FUNC*>(const std::map<std::string, hjbase::FUNC*>*);
 
 template void hjbase::HUAJISCRIPTBASE::Print_Internal_Pointer_Map<std::map<std::string, std::string>*>(const std::map<std::string, std::map<std::string, std::string>*>*);
+
+template void hjbase::HUAJISCRIPTBASE::Print_Internal_Pointer_Map<const_itVecStr*>(const std::map<std::string, const_itVecStr*>*);
 
 int hjbase::HUAJISCRIPTBASE::Collect_Tokens(const std::string& token) {
 
@@ -1533,6 +1587,7 @@ int hjbase::HUAJISCRIPTBASE::FUNC_Paring_Helper(std::map<std::string, std::strin
                         name_pair_it<parsed_names.end();++name_pair_it) {
                         if((stack_map->insert(std::pair<std::string, std::string>
                             (name_pair_it->first, name_pair_it->second))).second==false) {
+                            GC_Delete_MultiRecords(parsed_names);
                             Signal_Error(IE_INSERTION_FAILURE, name_pair_it->first);
                             throw syntax_except;
                         }
@@ -1541,14 +1596,19 @@ int hjbase::HUAJISCRIPTBASE::FUNC_Paring_Helper(std::map<std::string, std::strin
                     func_def_begin = env_var_it+1;
                     // Check again if func_def_begin is the end of iVstr           
                     if(func_def_begin>=iVstr.end()) {
+                        GC_Delete_MultiRecords(parsed_names);
                         Signal_Error(SE_UNEXPECTED_TOKEN, iVstr);
                         throw syntax_except;
                     }
+                    // Ask Garbage Collector to record variables in stack_map
+                    GC_New_MultiRecords(stack_map);
+                    GC_Delete_MultiRecords(parsed_names);
                 }
             }
         }
         // Check if env syntax correct
         if(env_depth) {
+            GC_Delete_MultiRecords(stack_map);
             Signal_Error(SE_UNEXPECTED_TOKEN, iVstr);
             throw syntax_except;
         }
@@ -1652,13 +1712,14 @@ int hjbase::HUAJISCRIPTBASE::Huaji_Command_Interpreter(const const_itVecStr& com
             if(var_names.size()<parsed_names.size()) {
                 Signal_Error(SE_ARITY_MISMATCH, command);
                 Cleanup_If_Exception_Thrown(reverted_ast_depth);
+                GC_Delete_MultiRecords(parsed_names);
                 delete preset_stack_frame;
                 return INVALID_COMMAND_RETURN_CODE;
             }
             bool object_scope_ref_used = false;
             for(std::vector<std::pair<std::string, std::string>>::const_iterator
                 name_it=parsed_names.begin();name_it<parsed_names.end();++name_it) {
-                if(name_it->first==UNDEFINED_TYPE) {
+                if(name_it->first==UNDEFINED_NAME) {
                     (*preset_stack_frame)[var_names.front()] = name_it->second;
                     if(!object_scope_ref_used&&var_names.front()==OBJECT_SCOPE_REF) {
                         try {
@@ -1666,6 +1727,7 @@ int hjbase::HUAJISCRIPTBASE::Huaji_Command_Interpreter(const const_itVecStr& com
                         }
                         catch (const HUAJIBASE_EXCEPTION& e) {
                             Cleanup_If_Exception_Thrown(reverted_ast_depth);
+                            GC_Delete_MultiRecords(parsed_names);
                             delete preset_stack_frame;
                             return INVALID_COMMAND_RETURN_CODE;
                         }
@@ -1679,6 +1741,7 @@ int hjbase::HUAJISCRIPTBASE::Huaji_Command_Interpreter(const const_itVecStr& com
                     if(name_in_stack_it==preset_stack_frame->end()) {
                         Signal_Error(NAE_UNDEFINED, name_it->first);
                         Cleanup_If_Exception_Thrown(reverted_ast_depth);
+                        GC_Delete_MultiRecords(parsed_names);
                         delete preset_stack_frame;
                         return INVALID_COMMAND_RETURN_CODE;
                     }
@@ -1689,6 +1752,7 @@ int hjbase::HUAJISCRIPTBASE::Huaji_Command_Interpreter(const const_itVecStr& com
                         }
                         catch (const HUAJIBASE_EXCEPTION& e) {
                             Cleanup_If_Exception_Thrown(reverted_ast_depth);
+                            GC_Delete_MultiRecords(parsed_names);
                             delete preset_stack_frame;
                             return INVALID_COMMAND_RETURN_CODE;
                         }
@@ -1699,6 +1763,8 @@ int hjbase::HUAJISCRIPTBASE::Huaji_Command_Interpreter(const const_itVecStr& com
                 }
             }
             Push_Stack_Frame(preset_stack_frame);
+
+            GC_Delete_MultiRecords(parsed_names);
 
             Block_Execution(func_ptr->Get_Fbody());
             
@@ -1734,6 +1800,7 @@ int hjbase::HUAJISCRIPTBASE::Huaji_Command_Interpreter(const const_itVecStr& com
                     name_pair_it<parsed_names.end();++name_pair_it) {
                     Declare_Name((*name_pair_it).first, (*name_pair_it).second);
                 }
+                GC_Delete_MultiRecords(parsed_names);
             }
             catch (const HUAJIBASE_EXCEPTION& e) {
                 Cleanup_If_Exception_Thrown(reverted_ast_depth);
@@ -1861,10 +1928,16 @@ int hjbase::HUAJISCRIPTBASE::Huaji_Command_Interpreter(const const_itVecStr& com
 
             int option_offset = 0;
             bool overloaded = false;
+            bool lazy = false;
             if(command.at(1)==OVERLOADING_FLAG) {
-                option_offset = 1;
+                ++option_offset;
                 overloaded = true;
             }
+            if(command.at(1+option_offset)==LAZY_FLAG) {
+                ++option_offset;
+                lazy = true;
+            }
+
             std::string func_name;
             bool with_side_effects = true;
             std::vector<std::string>::const_iterator func_def_begin = command.end();
@@ -1914,6 +1987,9 @@ int hjbase::HUAJISCRIPTBASE::Huaji_Command_Interpreter(const const_itVecStr& com
                     (*stack_map)[(*name_pair_it).first] = (*name_pair_it).second;
                     arg_names->push_back((*name_pair_it).first);
                 }
+
+                // Ask Garbage Collector to record variables in stack_map
+                GC_New_MultiRecords(stack_map);
             }
             else {
                 Signal_Error(SE_UNEXPECTED_TOKEN, command);
@@ -1921,10 +1997,8 @@ int hjbase::HUAJISCRIPTBASE::Huaji_Command_Interpreter(const const_itVecStr& com
                 return INVALID_COMMAND_RETURN_CODE;
             }
 
-            // Ask Garbage Collector to record variables in stack_map
-            GC_New_MultiRecords(stack_map);
             // Build FUNC object
-            FUNC* func_ptr = new FUNC(with_side_effects, const_itVecStr(func_def_begin, func_def_end), stack_map, arg_names);
+            FUNC* func_ptr = new FUNC(with_side_effects, const_itVecStr(func_def_begin, func_def_end), stack_map, arg_names, lazy);
             // Create unique identifier for FUNC to store in func_pool
             std::string func_ptrStr = FUNC_TAG + Convert_Ptr_To_Str(func_ptr) + func_name;
 
@@ -2069,6 +2143,12 @@ int hjbase::HUAJISCRIPTBASE::Huaji_Command_Interpreter(const const_itVecStr& com
             else if(info_item==INFO_NAMESPACE_POOL) {
                 Print_Internal_Pointer_Map(namespace_pool);
             }
+            else if(info_item==INFO_OBJECT_POOL) {
+                Print_Internal_Pointer_Map(object_pool);
+            }
+            else if(info_item==INFO_LAZY_POOL) {
+                Print_Internal_Pointer_Map(lazy_expr_pool);
+            }
             else if(info_item==INFO_OBJECT_STACK) {
                 for(std::vector<std::map<std::string, std::string>*>::const_iterator ptr_it=object_stack->begin();
                     ptr_it!=object_stack->end();++ptr_it) {
@@ -2146,7 +2226,7 @@ int hjbase::HUAJISCRIPTBASE::Huaji_Command_Interpreter(const const_itVecStr& com
         }
 
         case eEVALUATE: {
-            const_itVecStr expr = const_itVecStr(command.begin()+1,command.end()-2);
+            const_itVecStr expr = const_itVecStr(command.begin(),command.end()-1);
             try {
                 Evaluate_Expression(expr);
             }
@@ -2218,137 +2298,218 @@ std::string hjbase::HUAJISCRIPTBASE::Evaluate_Expression(const const_itVecStr& e
             std::vector<std::string>::const_iterator func_def_end = expr.end();
             std::list<std::string>* arg_names = new std::list<std::string>;
             std::map<std::string, std::string>* stack_map = new std::map<std::string, std::string>;
+            bool lazy = false;
 
+            if(expr.at(op_expr_offset)==LAZY_FLAG) {
+                ++op_expr_offset;
+                lazy = true;
+            }
             // expr.begin()+op_expr_offset+1, the +1 is because we need to skip EXPR_START
             FUNC_Paring_Helper(stack_map, arg_names, const_itVecStr(expr.begin()+op_expr_offset+1, expr.end()-1),
                                func_def_begin, func_def_end);
 
             GC_New_MultiRecords(stack_map);
-            FUNC* func_ptr = new FUNC(false, const_itVecStr(func_def_begin, func_def_end), stack_map, arg_names);
+            FUNC* func_ptr = new FUNC(false, const_itVecStr(func_def_begin, func_def_end), stack_map, arg_names, lazy);
             std::string func_ptrStr = FUNC_TAG + Convert_Ptr_To_Str(func_ptr) + FUNC_LAMBDA;
-
-            GC_Delete_Record(TEMP_RET_VAL_NAME, temp_return_val);
-            temp_return_val = func_ptrStr;
-            GC_New_Record(TEMP_RET_VAL_NAME, func_ptrStr);
-
+            
             if(!(func_pool->insert(std::pair<std::string, FUNC*>(func_ptrStr, func_ptr))).second) {
                 delete func_ptr;
-                GC_Delete_Record(TEMP_RET_VAL_NAME, op);
+                GC_Delete_MultiRecords(stack_map);
                 Signal_Error(IE_INSERTION_FAILURE, func_ptrStr);
                 throw huaji_except;
             }
-            
-            GC_Delete_Record(TEMP_RET_VAL_NAME, op);
 
-            Print_Debug_Info(DEB_EXPR_END, DECREASE_AST_DEPTH, func_ptrStr);
-            return func_ptrStr;
+            ans_val = func_ptrStr;
         }
-
-        /* 
-            Start to wrap arguments and record position in the following vectors.
-            The iterators are stored in ordered pairs, even though the we're using flat data structure - vector.
-        */
-        std::vector<std::vector<std::string>::const_iterator> pos_its;
-
-        int num_of_args = 0;
-
-        // Record if the symbol is inside braces
-        int num_of_unclosed_braces = 0;
-
-        /* 
-            Loop all tokens inside the EXPR_START, note we have recorded operator symbol so we start at begin()+2
-            end()-1 must be a EXPR_END. Though we don't check here, in Collect_Tokens it has been implicitly checked.
-        */
-        for(std::vector<std::string>::const_iterator it=expr.begin()+op_expr_offset;it<expr.end()-1;++it) {
-
-            // Handling nested expression
-            if(*it==EXPR_START) {
-
-                // If this is already at top level
-                if(num_of_unclosed_braces==0) {
-
-                    pos_its.push_back(it);
-                }
-
-                // Add unclosed braces
-                ++num_of_unclosed_braces;
+        else {
+            // Check if op is a func, and if it is a func, check if it is lazy
+            std::map<std::string, int>::const_iterator op_key_it = NUMERICAL_OPERATORS.find(op);
+            bool is_numerical_op = false;
+            bool is_builtin_func = false;
+            bool is_more_func = false;
+            bool is_lazy = false;
+            FUNC* func_ptr = nullptr;
+            int op_key;
+            // Numerical_operators
+            if(op_key_it!=NUMERICAL_OPERATORS.end()) {
+                is_numerical_op = true;
+                op_key = op_key_it->second;
             }
-            else if(*it==EXPR_END) {
-                --num_of_unclosed_braces;
-
-                if(num_of_unclosed_braces==0) {
-
-                    /* 
-                        Here we add 1 because we will use std::vector constructor
-                        , which does not include end iterator
-                    */
-                    pos_its.push_back(it+1);
-                    ++num_of_args;
-                }
-
-                // Prevent too many right braces
-                if(num_of_unclosed_braces<0) {
-                    GC_Delete_Record(TEMP_RET_VAL_NAME, op);
-                    Signal_Error(SE_UNEXPECTED_TOKEN, expr);
-                    throw syntax_except;
-                }
-            }
-            // Handling val
             else {
-
-                // At top level and is not EXPR_START or EXPR_END then it must be a val
-                if(num_of_unclosed_braces==0) {
-                    pos_its.push_back(it);
-                    pos_its.push_back(it+1);
-                    ++num_of_args;
+                // Builtin Func
+                op_key_it = BUILTIN_FUNCTIONS.find(op);
+                if(op_key_it!=BUILTIN_FUNCTIONS.end()) {
+                    is_builtin_func = true;
+                    op_key = op_key_it->second;
+                }
+                else {
+                    // Built-in func in derived class
+                    std::pair<int, bool> ret_pair = More_On_Builtin_Function_Search_Level_1(op);
+                    if(ret_pair.second) {
+                        is_more_func = true;
+                        op_key = ret_pair.first;
+                    }
+                    // user-defined func
+                    else {
+                        std::string func_ptrStr;
+                        if(Starts_With(op, FUNC_TAG)) {
+                            func_ptrStr = op;
+                        }
+                        else {
+                            func_ptrStr = Resolve_Name(op);
+                        }
+                        std::map<std::string, FUNC*>::const_iterator func_ptr_it = func_pool->find(func_ptrStr);
+                        if(func_ptr_it==func_pool->end()) {
+                            Signal_Error(IE_INTERNAL_QUERY_FAILED, func_ptrStr);
+                            throw huaji_except;
+                        }
+                        else {
+                            func_ptr = func_ptr_it->second;
+                            if(func_ptr->is_lazy) {
+                                is_lazy = true;
+                            }
+                        }
+                    }
                 }
             }
-        }
 
-        // Throw error if there are unclosed EXPR_START
-        if(num_of_unclosed_braces!=0) {
-            GC_Delete_Record(TEMP_RET_VAL_NAME, op);
-            Signal_Error(SE_REQUIRE_MORE_TOKENS, expr);
-            throw syntax_except;
-        }
+            /* 
+                Start to wrap arguments and record position in the following vectors.
+                The iterators are stored in ordered pairs, even though the we're using flat data structure - vector.
+            */
+            std::vector<std::vector<std::string>::const_iterator> pos_its;
 
-        /*
-            As we don't have a parser, we have to create ast dynamically.
-            Create a std::vector<std::string>* vals_container to store evaluated expression first,
-            later we will construct a const_itVecStr object based on this vals_container
-            and pass it to other processing functions
-        */
-        vals_container = new std::vector<std::string>;
-        for(int i=0;i<pos_its.size();i+=2) {
-            const_itVecStr arg = const_itVecStr(pos_its.at(i), pos_its.at(i+1));
-            std::string val;
+            int num_of_args = 0;
+
+            // Record if the symbol is inside braces
+            int num_of_unclosed_braces = 0;
+
+            /* 
+                Loop all tokens inside the EXPR_START, note we have recorded operator symbol so we start at begin()+2
+                end()-1 must be a EXPR_END. Though we don't check here, in Collect_Tokens it has been implicitly checked.
+            */
+            for(std::vector<std::string>::const_iterator it=expr.begin()+op_expr_offset;it<expr.end()-1;++it) {
+
+                // Handling nested expression
+                if(*it==EXPR_START) {
+
+                    // If this is already at top level
+                    if(num_of_unclosed_braces==0) {
+
+                        pos_its.push_back(it);
+                    }
+
+                    // Add unclosed braces
+                    ++num_of_unclosed_braces;
+                }
+                else if(*it==EXPR_END) {
+                    --num_of_unclosed_braces;
+
+                    if(num_of_unclosed_braces==0) {
+
+                        /* 
+                            Here we add 1 because we will use std::vector constructor
+                            , which does not include end iterator
+                        */
+                        pos_its.push_back(it+1);
+                        ++num_of_args;
+                    }
+
+                    // Prevent too many right braces
+                    if(num_of_unclosed_braces<0) {
+                        GC_Delete_Record(TEMP_RET_VAL_NAME, op);
+                        Signal_Error(SE_UNEXPECTED_TOKEN, expr);
+                        throw syntax_except;
+                    }
+                }
+                // Handling val
+                else {
+
+                    // At top level and is not EXPR_START or EXPR_END then it must be a val
+                    if(num_of_unclosed_braces==0) {
+                        pos_its.push_back(it);
+                        pos_its.push_back(it+1);
+                        ++num_of_args;
+                    }
+                }
+            }
+
+            // Throw error if there are unclosed EXPR_START
+            if(num_of_unclosed_braces!=0) {
+                GC_Delete_Record(TEMP_RET_VAL_NAME, op);
+                Signal_Error(SE_REQUIRE_MORE_TOKENS, expr);
+                throw syntax_except;
+            }
+
+            /*
+                As we don't have a parser, we have to create ast dynamically.
+                Create a std::vector<std::string>* vals_container to store evaluated expression first,
+                later we will construct a const_itVecStr object based on this vals_container
+                and pass it to other processing functions
+            */
+            vals_container = new std::vector<std::string>;
+            for(int i=0;i<pos_its.size();i+=2) {
+                std::string val;
+                try {
+                    if(is_lazy) {
+                        // Create lazy object
+                        const_itVecStr* lazy_ptr = new const_itVecStr(pos_its.at(i), pos_its.at(i+1));
+                        std::string lazy_ptrStr = LAZY_TAG + Convert_Ptr_To_Str(lazy_ptr);
+
+                        // Put into lazy_expr_pool
+                        if(!(lazy_expr_pool->insert(std::pair<std::string, const_itVecStr*>
+                            (lazy_ptrStr, lazy_ptr))).second) {
+                        Signal_Error(IE_INSERTION_FAILURE, lazy_ptrStr);
+                            throw huaji_except;
+                        }
+
+                        val = lazy_ptrStr;
+                    }
+                    else {
+                        const_itVecStr arg = const_itVecStr(pos_its.at(i), pos_its.at(i+1));
+                        val = Evaluate_Expression(arg);
+                    }
+                }
+                catch (const HUAJIBASE_EXCEPTION& e) {
+                    GC_Delete_Record(TEMP_RET_VAL_NAME, op);                
+                    for(std::vector<std::string>::const_iterator val_it=vals_container->begin();
+                        val_it<vals_container->end();++val_it) {
+                        GC_Delete_Record(TEMP_RET_VAL_NAME, *val_it);
+                    }
+                    delete vals_container;
+                    throw e;
+                }
+                GC_New_Record(TEMP_RET_VAL_NAME, val);
+                vals_container->push_back(val);
+            }
+
+            // Construct const_itVecStr for evaluation
+            const_itVecStr vals = const_itVecStr(vals_container->begin(), vals_container->end());
+
+            // Evaluate Expression
             try {
-                val = Evaluate_Expression(arg);
+                if(is_numerical_op) {
+                    ans_val = Numerical_Operation(op, op_key, vals);
+                }
+                else if(is_builtin_func) {
+                    ans_val = Builtin_Function(op, op_key, vals);
+                }
+                else if(is_more_func) {
+                    ans_val = More_On_Builtin_Function(op, op_key, vals);
+                }
+                else {
+                    ans_val = Apply_Function(func_ptr, vals);
+                }
             }
             catch (const HUAJIBASE_EXCEPTION& e) {
-                GC_Delete_Record(TEMP_RET_VAL_NAME, op);
+                for(std::vector<std::string>::const_iterator val_it=vals_container->begin();
+                    val_it<vals_container->end();++val_it) {
+                    GC_Delete_Record(TEMP_RET_VAL_NAME, *val_it);
+                }
                 delete vals_container;
+                GC_Delete_Record(TEMP_RET_VAL_NAME, op);
                 throw e;
             }
-            GC_New_Record(TEMP_RET_VAL_NAME, val);
-            vals_container->push_back(val);
-        }
-
-        // Construct const_itVecStr for evaluation
-        const_itVecStr vals = const_itVecStr(vals_container->begin(), vals_container->end());
-
-        // Evaluate Expression
-        try {
-            ans_val = Apply_Function(op, vals);
-        }
-        catch (const HUAJIBASE_EXCEPTION& e) {
-            for(std::vector<std::string>::const_iterator val_it=vals_container->begin();
-                val_it<vals_container->end();++val_it) {
-                GC_Delete_Record(TEMP_RET_VAL_NAME, *val_it);
-            }
-            delete vals_container;
-            GC_Delete_Record(TEMP_RET_VAL_NAME, op);
-            throw e;
         }
         /* 
             OP cannot be a return value, so OP can be deleted here, but vals_container needs to be
@@ -2881,6 +3042,21 @@ hjbase::HUAJISCRIPTBASE::Builtin_Function(const std::string& op, int op_key, con
                     throw name_except;
                 }
             }
+            case eFUNC_LAZY: {
+                if(vals.size()!=1) {
+                    Signal_Error(SE_ARITY_MISMATCH, op);
+                    throw syntax_except;
+                }
+
+                try {
+                    const_itVecStr* expr = lazy_expr_pool->at(vals.at(0));
+                    return Evaluate_Expression(*expr);
+                } 
+                catch (const std::out_of_range& oor) {
+                    Signal_Error(IE_INTERNAL_QUERY_FAILED, vals.at(0));
+                    throw eval_except;
+                }
+            }
             default: {
                 Signal_Error(IE_UNKNOWN, op);
                 throw huaji_except;
@@ -2907,50 +3083,19 @@ hjbase::HUAJISCRIPTBASE::Builtin_Function(const std::string& op, int op_key, con
     throw huaji_except;
 }
 
-std::pair<std::string, bool>
-hjbase::HUAJISCRIPTBASE::More_On_Expression_Level_1(const std::string& op, const const_itVecStr& vals) {
-    return std::pair<std::string, bool>(std::string(), false);
+std::pair<int, bool>
+hjbase::HUAJISCRIPTBASE::More_On_Builtin_Function_Search_Level_1(const std::string& op) {
+    return std::pair<int, bool>(-1, false);
 }
 
-std::string hjbase::HUAJISCRIPTBASE::Apply_Function(const std::string& op, const const_itVecStr& vals) {
-    std::map<std::string, int>::const_iterator op_key_it = NUMERICAL_OPERATORS.find(op);
-    // Numerical_operators
-    if(op_key_it!=NUMERICAL_OPERATORS.end()) {
-        return Numerical_Operation(op, op_key_it->second, vals);
-    }
-    // Other basic operations
-    op_key_it = BUILTIN_FUNCTIONS.find(op);
-    if(op_key_it!=BUILTIN_FUNCTIONS.end()) {
-        return Builtin_Function(op, op_key_it->second, vals);
-    }
-    else {
-        std::pair<std::string, bool> ret_pair = More_On_Expression_Level_1(op, vals);
-        if(ret_pair.second) {
-            return ret_pair.first;
-        }
-    }
-    // FUNC execution
-    std::string func_ptrStr;
-    if(Starts_With(op, FUNC_TAG)) {
-        func_ptrStr = op;
-    }
-    else {
-        func_ptrStr = Resolve_Name(op);
-    }
+std::string hjbase::HUAJISCRIPTBASE::More_On_Builtin_Function(const std::string& op, int op_key, const const_itVecStr& vals) {
+    throw huaji_except;
+}
 
-    FUNC* func_ptr = nullptr;
-    std::map<std::string, FUNC*>::const_iterator func_ptr_it = func_pool->find(func_ptrStr);
-    if(func_ptr_it==func_pool->end()) {
-        Signal_Error(IE_INTERNAL_QUERY_FAILED, func_ptrStr);
-        throw huaji_except;
-    }
-    else {
-        func_ptr = (*func_ptr_it).second;
-    }
-
+std::string hjbase::HUAJISCRIPTBASE::Apply_Function(FUNC* func_ptr, const const_itVecStr& vals) {
     // Invoke Side_Effects_Guard if the function has side effects
     if(func_ptr->has_side_effects) {
-        Side_Effects_Guard(op);
+        Side_Effects_Guard();
     }
 
     // Allocate new stack and pushed to names_stack

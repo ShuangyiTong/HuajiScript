@@ -1,3 +1,4 @@
+config debug on;
 init VEC2;
 define __init__@VEC2(self, var_a, var_b) {
     declare var_a@self=var_a, var_b@self=var_b;
@@ -18,5 +19,9 @@ printVec2(vec2_1);
 
 print --expr (mem-ref "var_a" vec2_1);
 
+info object_pool;
+
 config gc off;
 delete vec2_1;
+
+info object_pool;

@@ -176,6 +176,7 @@ namespace hjbase {
             const std::string FUNC_STACK_POS = "stack-pos";
             const std::string FUNC_INIT = "init";
             const std::string FUNC_MEMVAR = "mem-ref";
+            const std::string FUNC_LAZY = "lazy";
 
             enum {
                 eFUNC_AND,
@@ -197,6 +198,7 @@ namespace hjbase {
                 eFUNC_INIT,
                 eFUNC_MEMVAR,
                 eFUNC_MEMFUNC,
+                eFUNC_LAZY,
             };
 
             const std::map<std::string, int> BUILTIN_FUNCTIONS = {
@@ -218,6 +220,7 @@ namespace hjbase {
                 { FUNC_STACK_POS, eFUNC_STACK_POS },
                 { FUNC_INIT, eFUNC_INIT },
                 { FUNC_MEMVAR, eFUNC_MEMVAR },
+                { FUNC_LAZY, eFUNC_LAZY },
             };
         }
         namespace commands_names {
@@ -244,7 +247,9 @@ namespace hjbase {
             const std::string INFO_NAME = "name";
             const std::string INFO_FUNC_POOL = "func_pool";
             const std::string INFO_NAMESPACE_POOL = "namespace_pool";
+            const std::string INFO_OBJECT_POOL = "object_pool";
             const std::string INFO_OBJECT_STACK = "object_stack";
+            const std::string INFO_LAZY_POOL = "lazy";
 
             const std::string EVALUATE = "(";
 
@@ -338,7 +343,7 @@ namespace hjbase {
             const std::string BOOL_TRUE = "1";
             const std::string BOOL_FALSE = "0";
 
-            const std::string CONSOLE_INFO_STRING = "Huaji Script Interpreter v1.06";
+            const std::string CONSOLE_INFO_STRING = "Huaji Script Interpreter v1.061";
             const std::string COMMAND_LINE_PROMPT = "OvO >>> ";
 
             const std::string UNDEFINED_NAME = "__undefined__";
@@ -348,6 +353,7 @@ namespace hjbase {
             const std::string NONEWLINE = "--nonl";
             const std::string USE_EXPR_FROM_HERE = "--expr";
             const std::string OVERLOADING_FLAG = "--overload";
+            const std::string LAZY_FLAG = "--lazy";
             const std::string STACK_FLAG = "--stack";
             const std::string NAMESPACE_FLAG = "--namespace";
             const std::string SIZE_FLAG = "--size";
@@ -360,11 +366,13 @@ namespace hjbase {
             const int LIST_TAG_SIZE = 6;
             const std::string FUNC_TAG = "#:func";
             const std::string OBJECT_TAG = "#:object";
+            const std::string LAZY_TAG = "#:lazy";
             const std::string UNDEFINED_TYPE = "#:undefined";
 
             enum {
                 FUNC_TAG_CODE,
                 OBJECT_TAG_CODE,
+                LAZY_TAG_CODE,
             };
 
             /*
@@ -376,6 +384,7 @@ namespace hjbase {
                 EXTRA_DATA_STRUCTURE_REQUIRED_TYPE_TREE = {
                 { FUNC_TAG, FUNC_TAG_CODE },
                 { OBJECT_TAG, OBJECT_TAG_CODE },
+                { LAZY_TAG, LAZY_TAG_CODE },
             };
         }
     }
@@ -473,14 +482,14 @@ namespace hjbase {
         public:
             
             FUNC(bool with_side_effects, const const_itVecStr& body_iVstr, 
-                 const std::map<std::string, std::string>* stack_map, const std::list<std::string>* arg_names);
+                 const std::map<std::string, std::string>* stack_map, const std::list<std::string>* arg_names, bool lazy=false);
             ~FUNC();
 
             std::map<std::string, std::string>* Get_Stack_Frame_Template_Copy_On_Heap() const;
             const std::map<std::string, std::string>* Get_Stack_Frame_Template() const;
             std::list<std::string> Get_Var_Names() const;
             const_itVecStr Get_Fbody();
-            bool has_side_effects;
+            bool has_side_effects, is_lazy;
 
         private:
             const_itVecStr* fbody;
@@ -510,7 +519,9 @@ namespace hjbase {
 
             std::pair<int, bool> More_On_Command_Level_1(const const_itVecStr& command);
 
-            std::pair<std::string, bool> More_On_Expression_Level_1(const std::string& op, const const_itVecStr& vals);
+            std::pair<int, bool> More_On_Builtin_Function_Search_Level_1(const std::string& op);
+
+            std::string More_On_Builtin_Function(const std::string& op, int op_key, const const_itVecStr& vals);
 
             std::pair<std::string, bool> More_On_Names_Query_Level_1(const std::string& name);
 
@@ -581,7 +592,7 @@ namespace hjbase {
 
             std::string Builtin_Function(const std::string& op, int op_key, const const_itVecStr& vals);
             
-            std::string Apply_Function(const std::string& op, const const_itVecStr& vals);
+            std::string Apply_Function(FUNC* func_ptr, const const_itVecStr& vals);
 
             void Print_Debug_Info(const std::string& info, int ast_depth_change, const const_itVecStr& node);
 
@@ -604,10 +615,14 @@ namespace hjbase {
             void GC_New_MultiRecords(const std::map<std::string, std::string>* names);
 
             void GC_Delete_MultiRecords(const std::map<std::string, std::string>* names);
+
+            void GC_Delete_MultiRecords(const std::vector<std::pair<std::string, std::string>>& names);
             
             void Delete_Func_Object(const std::string& func_ptrStr);
 
             void Delete_Object_Object(const std::string& object_ptrStr);
+
+            void Delete_Lazy_Object(const std::string& lazy_ptrStr);
 
             void Delete_Internal_Object(const std::string& ref_val, int type_code=-1);
 
@@ -633,6 +648,8 @@ namespace hjbase {
             std::map<std::string, std::map<std::string, std::string>*>* object_pool;
 
             std::map<std::string, FUNC*>* func_pool;
+
+            std::map<std::string, const_itVecStr*>* lazy_expr_pool;
 
             std::string temp_return_val;
 

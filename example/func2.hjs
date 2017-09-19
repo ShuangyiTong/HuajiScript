@@ -4,9 +4,6 @@ define (cons2 first second rest) (
 
 print --expr (cons2 1 2 `(3));
 
-declare true = (lambda (t f) t);
-declare false = (lambda (t f) f);
+source lib/std;
 
-declare if = (lambda (b t f) ((b (lambda (y) <t=t, f=f> t) (lambda (y) <t=t, f=f> f)) 0));
-
-print --expr (if true 1 2);
+print --expr (true@std (make-lazy@std 1) (make-lazy@std (/ 1 0)));

@@ -1,0 +1,15 @@
+source lib/std;
+
+(write cout@std "test\n");
+
+declare test_out = (output "test.out");
+
+declare readin_val = (read "--getline" cin@std);
+
+(write test_out readin_val);
+
+print "press enter to delete test.out";
+
+(read "--getchar" cin@std);
+
+exec "rm test.out";

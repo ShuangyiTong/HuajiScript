@@ -98,7 +98,7 @@ std::pair<int, int> hjbase::ufunc::Get_First_Element_Pos(const std::string& this
     // Get the first position which is not a space after cEXPR_START
     int start_pos = 1;
     for(;start_pos<this_list.size()-1;++start_pos) {
-        if(this_list[start_pos]!=' ') {
+        if(!std::isspace(this_list[start_pos])) {
             if(this_list[start_pos]==cEXPR_START) {
                 is_sublist = true;
             }
@@ -111,8 +111,8 @@ std::pair<int, int> hjbase::ufunc::Get_First_Element_Pos(const std::string& this
     for(std::string::const_iterator it=this_list.begin()+start_pos+1;it<this_list.end();++it) {
         if(is_quotation) {
             if(*it==QUOTATION_MARK) {
-                // include QUOTATION mark
-                return std::pair<int, int>(start_pos, it-this_list.begin()-start_pos+1);
+                // exclude QUOTATION mark
+                return std::pair<int, int>(start_pos+1, it-this_list.begin()-start_pos-1);
             }
         }
         else if(is_sublist) {
@@ -322,34 +322,20 @@ int hjbase::LISTFORMATTER::Take_One_Char(char cur_char) {
     return REQUIRE_MORE_CHAR_FOR_COMPLETE_LST;
 }
 
-void hjbase::HUAJITOKENIZER::Constructor_Helper() {
-    is_in_quotation = false;
-    is_in_block_comment = false;
-    is_in_line_comment = false;
-    is_in_square_bracket = false;
-    is_in_nosubst = false;
-    is_in_list = false;
-    enable_raw_string = false;
+hjbase::HUAJITOKENIZER::HUAJITOKENIZER()
+    : is_in_quotation (false)
+    , is_in_block_comment (false)
+    , is_in_line_comment (false)
+    , is_in_square_bracket (false)
+    , is_in_nosubst (false)
+    , is_in_list (false)
+    , enable_raw_string (false)
+    , lst_formatter (nullptr)
+    , source (nullptr) {
     token_queue = new std::queue<std::string>;
-    lst_formatter = nullptr;
-}
-
-hjbase::HUAJITOKENIZER::HUAJITOKENIZER(std::string& file_name) 
-    : is_cin (false) {
-    source = new std::ifstream(file_name);
-    Constructor_Helper();
-}
-
-hjbase::HUAJITOKENIZER::HUAJITOKENIZER() 
-    : is_cin (true) {
-    source = &(std::cin);
-    Constructor_Helper();
 }
 
 hjbase::HUAJITOKENIZER::~HUAJITOKENIZER() {
-    if(!is_cin) {
-        delete source;
-    }
     if(lst_formatter) {
         delete lst_formatter;
     }
@@ -705,15 +691,20 @@ inline const std::map<std::string, std::string>* hjbase::FUNC::Get_Stack_Frame_T
     return stack_frame_template;
 }
 
-void hjbase::HUAJISCRIPTBASE::Constructor_Helper() {
-    enable_gc = true;
-    collect_status = 0;
-    collect_length = 0;
-    enable_float_point = true;
-    enable_debug_mode = false;
-    current_ast_depth = 0;
-    enable_raw_string = false;
-    allow_side_effects = true;
+hjbase::HUAJISCRIPTBASE::HUAJISCRIPTBASE()
+    : enable_gc (true) 
+    , collect_status (0) 
+    , collect_length (0) 
+    , enable_float_point (true) 
+    , enable_debug_mode (false) 
+    , current_ast_depth (0)
+    , enable_raw_string (false) 
+    , allow_side_effects (true) 
+    , last_if_cond (true) {
+    tokenizer = new HUAJITOKENIZER();
+    is_console_stack = new std::vector<bool>;
+    input_stream_stack = new std::vector<std::istream*>;
+    sourced_history = new std::set<std::string>;
     names_stack = new std::vector<std::map<std::string, std::string>*>;
     gc_records = new std::map<std::string, std::list<std::string>>;
     temp_return_val = UNDEFINED_NAME;
@@ -723,18 +714,9 @@ void hjbase::HUAJISCRIPTBASE::Constructor_Helper() {
     object_pool = new std::map<std::string,std::map<std::string,std::string>*>;
     object_stack = new std::vector<std::map<std::string, std::string>*>;
     lazy_expr_pool = new std::map<std::string, const_itVecStr*>;
-}
-
-hjbase::HUAJISCRIPTBASE::HUAJISCRIPTBASE(std::string file_name) 
-    : is_console (false) {
-    tokenizer = new HUAJITOKENIZER(file_name);
-    Constructor_Helper();
-}
-
-hjbase::HUAJISCRIPTBASE::HUAJISCRIPTBASE() 
-    : is_console (true) {
-    tokenizer = new HUAJITOKENIZER();
-    Constructor_Helper();
+    istream_pool = new std::map<std::string, std::istream*>;
+    ostream_pool = new std::map<std::string, std::ostream*>;
+    array_pool = new std::map<std::string, std::vector<std::string>*>;
 }
 
 hjbase::HUAJISCRIPTBASE::~HUAJISCRIPTBASE() {
@@ -766,6 +748,26 @@ hjbase::HUAJISCRIPTBASE::~HUAJISCRIPTBASE() {
     }
     delete lazy_expr_pool;
     delete tokenizer;
+    // input_stream_stack should be empty when deleted, so no need to delete istream object.
+    delete input_stream_stack;
+    delete is_console_stack;
+    delete sourced_history;
+    for(std::map<std::string, std::istream*>::iterator it=istream_pool->begin();it!=istream_pool->end();++it) {
+        if(it->first!=CIN_PTRSTR) {
+            delete it->second;
+        }
+    }
+    for(std::map<std::string, std::ostream*>::iterator it=ostream_pool->begin();it!=ostream_pool->end();++it) {
+        if(it->first!=COUT_PTRSTR) {
+            delete it->second;
+        }
+    }
+    delete istream_pool;
+    delete ostream_pool;
+    for(std::map<std::string, std::vector<std::string>*>::iterator it=array_pool->begin();it!=array_pool->end();++it) {
+        delete it->second;
+    }
+    delete array_pool;
 }
 
 std::pair<bool, int> hjbase::HUAJISCRIPTBASE::More_On_Check_If_GC_Required_Level_1(const std::string&  ref_val) {
@@ -773,12 +775,22 @@ std::pair<bool, int> hjbase::HUAJISCRIPTBASE::More_On_Check_If_GC_Required_Level
 }
 
 std::pair<bool, int> hjbase::HUAJISCRIPTBASE::Check_If_GC_Required(const std::string& ref_val) {
+    // if ref_val is empty, this violates our set definition
+    if(ref_val==EMPTY_STRING_OBJECT) {
+        return std::pair<bool, int>(false, -1);
+    }
     std::map<std::string, int, hjbase::ufunc::Starts_With_Less_Predicate>::const_iterator
         res_it = EXTRA_DATA_STRUCTURE_REQUIRED_TYPE_TREE.find(ref_val);
 
     if(res_it==EXTRA_DATA_STRUCTURE_REQUIRED_TYPE_TREE.end()) {
         return More_On_Check_If_GC_Required_Level_1(ref_val);
     }
+
+    // ref_val can't be shorter
+    if(ref_val.size()<(res_it->first).size()) {
+        return std::pair<bool, int>(false, -1);
+    }
+
     return std::pair<bool, int>(true, res_it->second);
 }
 
@@ -819,6 +831,7 @@ void hjbase::HUAJISCRIPTBASE::GC_Delete_Record(const std::string& name, const st
         if(record_it==gc_records->end()) {
             Signal_Error(IE_UNKNOWN, val);
             throw huaji_except;
+            return;
         }
         for(std::list<std::string>::const_iterator record_list_it=(record_it->second).begin();
             record_list_it!=(record_it->second).end();++record_list_it) {
@@ -870,7 +883,9 @@ void hjbase::HUAJISCRIPTBASE::GC_Delete_MultiRecords(const std::vector<std::pair
 void hjbase::HUAJISCRIPTBASE::Delete_Func_Object(const std::string& func_ptrStr) {
     std::map<std::string, FUNC*>::const_iterator func_it = func_pool->find(func_ptrStr);
     if(func_it==func_pool->end()) {
-        Signal_Error(IE_NOT_DELETABLE, func_ptrStr);
+        #ifdef SIGNAL_UNABLE_TO_DELETE
+            Signal_Error(IE_NOT_DELETABLE, func_ptrStr);
+        #endif
         return;
     }
 
@@ -890,7 +905,9 @@ void hjbase::HUAJISCRIPTBASE::Delete_Object_Object(const std::string& object_ptr
         = object_pool->find(object_ptrStr);
 
     if(object_it==object_pool->end()) {
-        Signal_Error(IE_NOT_DELETABLE, object_ptrStr);
+        #ifdef SIGNAL_UNABLE_TO_DELETE
+            Signal_Error(IE_NOT_DELETABLE, object_ptrStr);
+        #endif
         return;
     }
 
@@ -908,7 +925,9 @@ void hjbase::HUAJISCRIPTBASE::Delete_Lazy_Object(const std::string& lazy_ptrStr)
         = lazy_expr_pool->find(lazy_ptrStr);
 
     if(lazy_it==lazy_expr_pool->end()) {
-        Signal_Error(IE_NOT_DELETABLE, lazy_ptrStr);
+        #ifdef SIGNAL_UNABLE_TO_DELETE
+            Signal_Error(IE_NOT_DELETABLE, lazy_ptrStr);
+        #endif
         return;
     }
 
@@ -916,6 +935,65 @@ void hjbase::HUAJISCRIPTBASE::Delete_Lazy_Object(const std::string& lazy_ptrStr)
     lazy_expr_pool->erase(lazy_it);
 
     return;
+}
+
+void hjbase::HUAJISCRIPTBASE::Delete_IS_Object(const std::string& is_ptrStr) {
+    std::map<std::string, std::istream*>::const_iterator is_it
+        = istream_pool->find(is_ptrStr);
+
+    if(is_it==istream_pool->end()) {
+        #ifdef SIGNAL_UNABLE_TO_DELETE
+            Signal_Error(IE_NOT_DELETABLE, is_ptrStr);
+        #endif
+        return;
+    }
+
+    delete is_it->second;
+    istream_pool->erase(is_it);
+
+    return;
+}
+
+void hjbase::HUAJISCRIPTBASE::Delete_OS_Object(const std::string& os_ptrStr) {
+    std::map<std::string, std::ostream*>::const_iterator os_it
+        = ostream_pool->find(os_ptrStr);
+
+    if(os_it==ostream_pool->end()) {
+        #ifdef SIGNAL_UNABLE_TO_DELETE
+            Signal_Error(IE_NOT_DELETABLE, os_ptrStr);
+        #endif
+        return;
+    }
+
+    delete os_it->second;
+    ostream_pool->erase(os_it);
+
+    return;
+}
+
+std::vector<std::string>* hjbase::HUAJISCRIPTBASE::Get_Array_Object(const std::string& array_ptrStr) {
+    std::map<std::string, std::vector<std::string>*>::const_iterator array_it
+        = array_pool->find(array_ptrStr);
+
+    if(array_it==array_pool->end()) {
+        #ifdef SIGNAL_UNABLE_TO_DELETE
+            Signal_Error(IE_NOT_DELETABLE, array_ptrStr);
+        #endif
+        return nullptr;
+    }
+    return array_it->second;
+}
+
+void hjbase::HUAJISCRIPTBASE::Delete_Array_Object(const std::string& array_ptrStr) {
+    std::vector<std::string>* array_ptr = Get_Array_Object(array_ptrStr);
+    if(!array_ptr) {
+        return;
+    }
+
+    for(std::vector<std::string>::const_iterator val_it=array_ptr->begin();
+        val_it<array_ptr->end();++val_it) {
+        GC_Delete_Record(array_ptrStr, *val_it);
+    }
 }
 
 void hjbase::HUAJISCRIPTBASE::More_On_Delete_Object_Level_1(const std::string& ref_val, int type_code) {
@@ -937,6 +1015,18 @@ void hjbase::HUAJISCRIPTBASE::Delete_Internal_Object(const std::string& ref_val,
             Delete_Lazy_Object(ref_val);
             break;
         }
+        case ISTREAM_TAG_CODE: {
+            Delete_IS_Object(ref_val);
+            break;
+        }
+        case OSTREAM_TAG_CODE: {
+            Delete_OS_Object(ref_val);
+            break;
+        }
+        case ARRAY_TAG_CODE: {
+            Delete_Array_Object(ref_val);
+            break;
+        }
         default: {
             More_On_Delete_Object_Level_1(ref_val, type_code);
             return;
@@ -955,6 +1045,7 @@ hjbase::HUAJISCRIPTBASE::General_Name_Declaring_Syntax_Parser(const const_itVecS
 
     std::string name;
     bool name_already_used = true;
+    bool name_from_evaluation = false;
 
     for(std::vector<std::string>::const_iterator it=iVstr.begin();it<iVstr.end();++it) {
         // Assign val when declare
@@ -1003,13 +1094,18 @@ hjbase::HUAJISCRIPTBASE::General_Name_Declaring_Syntax_Parser(const const_itVecS
                 throw syntax_except;
             }
             if(from_func_call) {
-                // Here name should be val, we add this option to reduce code, as the syntax is the same, but this way of naming variable is incorrect.
-                std::string val = Handle_Val(name);
-                ret_vec.push_back(std::pair<std::string, std::string>(UNDEFINED_NAME, val));
-                GC_New_Record(UNDEFINED_NAME, val);
+                if(!name_from_evaluation) {
+                    // Here name should be val, we add this option to reduce code, as the syntax is the same, but this way of naming variable is incorrect.
+                    name = Handle_Val(name);
+                }
+                ret_vec.push_back(std::pair<std::string, std::string>(UNDEFINED_NAME, name));
+                GC_New_Record(UNDEFINED_NAME, name);
+                name_from_evaluation=false;
             }
             else {
                 ret_vec.push_back(std::pair<std::string, std::string>(name, UNDEFINED_TYPE));
+                // set name_from_evaluation to false
+                name_from_evaluation = false;
             }
             name_already_used = true;
         }                    
@@ -1036,7 +1132,7 @@ hjbase::HUAJISCRIPTBASE::General_Name_Declaring_Syntax_Parser(const const_itVecS
                 }
                 const_itVecStr expr = const_itVecStr(expr_begin_it, expr_end_it);
                 name = Evaluate_Expression(expr);
-
+                name_from_evaluation = true;
             }
             else {
                 name = *it;
@@ -1047,9 +1143,11 @@ hjbase::HUAJISCRIPTBASE::General_Name_Declaring_Syntax_Parser(const const_itVecS
     // Last name not pushed into vector
     if(!name_already_used) {
         if(from_func_call) {
-            std::string val = Handle_Val(name);
-            ret_vec.push_back(std::pair<std::string, std::string>(UNDEFINED_NAME, val));
-            GC_New_Record(UNDEFINED_NAME, val);
+            if(!name_from_evaluation) {
+                name = Handle_Val(name);
+            }
+            ret_vec.push_back(std::pair<std::string, std::string>(UNDEFINED_NAME, name));
+            GC_New_Record(UNDEFINED_NAME, name);
         }
         else {
             ret_vec.push_back(std::pair<std::string, std::string>(name, UNDEFINED_TYPE));
@@ -1142,6 +1240,12 @@ template void hjbase::HUAJISCRIPTBASE::Print_Internal_Pointer_Map<std::map<std::
 
 template void hjbase::HUAJISCRIPTBASE::Print_Internal_Pointer_Map<const_itVecStr*>(const std::map<std::string, const_itVecStr*>*);
 
+template void hjbase::HUAJISCRIPTBASE::Print_Internal_Pointer_Map<std::istream*>(const std::map<std::string, std::istream*>*);
+
+template void hjbase::HUAJISCRIPTBASE::Print_Internal_Pointer_Map<std::ostream*>(const std::map<std::string, std::ostream*>*);
+
+template void hjbase::HUAJISCRIPTBASE::Print_Internal_Pointer_Map<std::vector<std::string>*>(const std::map<std::string, std::vector<std::string>*>*);
+
 int hjbase::HUAJISCRIPTBASE::Collect_Tokens(const std::string& token) {
 
     // Increase collect_status by 1 as it is an left brace
@@ -1212,12 +1316,27 @@ int hjbase::HUAJISCRIPTBASE::Take_One_Token(std::vector<std::string>::const_iter
     }
 }
 
-void hjbase::HUAJISCRIPTBASE::Entry_Point() {
+void hjbase::HUAJISCRIPTBASE::Entry_Point(std::string filename) {
     std::vector<std::string> command;
     std::string token;
-    if(is_console) {
+    if(filename==EMPTY_STRING_OBJECT) {
         std::cout<<CONSOLE_INFO_STRING<<std::endl;
         std::cout<<COMMAND_LINE_PROMPT;
+        is_console_stack->push_back(true);
+        tokenizer->source = &std::cin;
+    }
+    else {
+        tokenizer->source = new std::ifstream(filename);
+        // Check if file exists
+        if((tokenizer->source)->good()) {
+            is_console_stack->push_back(false);
+            input_stream_stack->push_back(tokenizer->source);
+        }
+        else {
+            tokenizer->source = nullptr;
+            Signal_Error(IOE_FILE_NOT_EXISTS, filename);
+            return;
+        }
     }
     while(1) {
         try {
@@ -1225,8 +1344,30 @@ void hjbase::HUAJISCRIPTBASE::Entry_Point() {
             command.push_back(token);
         }
         catch (const TOKEN_EXCEPTION& e) {    
-            if (collect_length!=0) {
+            tokenizer->source = nullptr;
+            if(collect_length!=0) {
                 Signal_Error(SE_REQUIRE_MORE_TOKENS, token);
+                collect_length = 0;
+            }
+            if(!is_console_stack->back()) {
+                delete input_stream_stack->back();
+                input_stream_stack->pop_back();
+            }
+            is_console_stack->pop_back();
+            if(is_console_stack->size()) {
+                // Still sources availible in stack, change tokenizer sources then jump to loop top
+                if(is_console_stack->back()) {
+                    tokenizer->source = &std::cin;
+                    std::cout<<COMMAND_LINE_PROMPT;
+                }
+                else {
+                    tokenizer->source = input_stream_stack->back();
+                }
+                continue;
+            }
+            else {
+                // No more sources in stack, return
+                return;
             }
             return;
         }
@@ -1236,7 +1377,7 @@ void hjbase::HUAJISCRIPTBASE::Entry_Point() {
             if(ret_code==EXIT_RETURN_CODE) {
                 return;
             }
-            if(is_console) {
+            if(is_console_stack->back()) {
                 std::cout<<COMMAND_LINE_PROMPT;
             }
         }
@@ -1603,6 +1744,8 @@ int hjbase::HUAJISCRIPTBASE::FUNC_Paring_Helper(std::map<std::string, std::strin
                     // Ask Garbage Collector to record variables in stack_map
                     GC_New_MultiRecords(stack_map);
                     GC_Delete_MultiRecords(parsed_names);
+                    
+                    break;
                 }
             }
         }
@@ -1669,6 +1812,7 @@ int hjbase::HUAJISCRIPTBASE::Huaji_Command_Interpreter(const const_itVecStr& com
                 func_ptrStr = Resolve_Name(cmd_str);
             }
             catch (const HUAJIBASE_EXCEPTION& e) {
+                Cleanup_If_Exception_Thrown(reverted_ast_depth);
                 return UNKNOWN_COMMAND_RETURN_CODE;
             }
 
@@ -1870,18 +2014,61 @@ int hjbase::HUAJISCRIPTBASE::Huaji_Command_Interpreter(const const_itVecStr& com
 
         // If command
         case eCMD_IF: {
-
             bool condition = false;
-
             try {
-                condition = Find_And_Evaluate_Expression(command)!=BOOL_FALSE;
+                std::string cond_str = command.at(1);
+                if(cond_str!=EXPR_START) {
+                    condition = Handle_Val(cond_str)!=BOOL_FALSE;
+                }
+                else {
+                    condition = Find_And_Evaluate_Expression(command)!=BOOL_FALSE;
+                }
             }
             catch (const HUAJIBASE_EXCEPTION& e){
                 Cleanup_If_Exception_Thrown(reverted_ast_depth);
                 return INVALID_COMMAND_RETURN_CODE;
             }
 
+            last_if_cond = condition;
             if(condition) {
+                if(Block_Execution(command)==EXIT_RETURN_CODE) {
+                    Print_Debug_Info(DEB_COMMAND_END, DECREASE_AST_DEPTH, command);
+                    return EXIT_RETURN_CODE;
+                }
+            }
+            break;
+        }
+
+        case eCMD_ELIF: {
+            if(!last_if_cond) {
+                bool condition = false;                
+                try {
+                    std::string cond_str = command.at(1);
+                    if(cond_str!=EXPR_START) {
+                        condition = Handle_Val(cond_str)!=BOOL_FALSE;
+                    }
+                    else {
+                        condition = Find_And_Evaluate_Expression(command)!=BOOL_FALSE;
+                    }
+                }
+                catch (const HUAJIBASE_EXCEPTION& e){
+                    Cleanup_If_Exception_Thrown(reverted_ast_depth);
+                    return INVALID_COMMAND_RETURN_CODE;
+                }
+    
+                last_if_cond = condition;
+                if(condition) {
+                    if(Block_Execution(command)==EXIT_RETURN_CODE) {
+                        Print_Debug_Info(DEB_COMMAND_END, DECREASE_AST_DEPTH, command);
+                        return EXIT_RETURN_CODE;
+                    }
+                }
+                break;
+            }
+        }
+
+        case eCMD_ELSE: {
+            if(!last_if_cond) {
                 if(Block_Execution(command)==EXIT_RETURN_CODE) {
                     Print_Debug_Info(DEB_COMMAND_END, DECREASE_AST_DEPTH, command);
                     return EXIT_RETURN_CODE;
@@ -1894,9 +2081,17 @@ int hjbase::HUAJISCRIPTBASE::Huaji_Command_Interpreter(const const_itVecStr& com
         case eCMD_WHILE: {
 
             bool condition = false;
+            bool name_condition = false;
+            std::string cond_str = command.at(1);
 
             try {
-                condition = Find_And_Evaluate_Expression(command)!=BOOL_FALSE;
+                if(cond_str!=EXPR_START) {
+                    condition = Handle_Val(cond_str)!=BOOL_FALSE;
+                    name_condition = true;
+                }
+                else {
+                    condition = Find_And_Evaluate_Expression(command)!=BOOL_FALSE;
+                }
             }
             catch (const HUAJIBASE_EXCEPTION& e){
                 Cleanup_If_Exception_Thrown(reverted_ast_depth);
@@ -1909,7 +2104,12 @@ int hjbase::HUAJISCRIPTBASE::Huaji_Command_Interpreter(const const_itVecStr& com
                     return EXIT_RETURN_CODE;
                 }
                 try {
-                    condition = Find_And_Evaluate_Expression(command)!=BOOL_FALSE;
+                    if(name_condition) {
+                        condition = Handle_Val(cond_str)!=BOOL_FALSE;
+                    }
+                    else {
+                        condition = Find_And_Evaluate_Expression(command)!=BOOL_FALSE;
+                    }
                 }
                 catch (const HUAJIBASE_EXCEPTION& e){
                     Cleanup_If_Exception_Thrown(reverted_ast_depth);
@@ -2094,6 +2294,53 @@ int hjbase::HUAJISCRIPTBASE::Huaji_Command_Interpreter(const const_itVecStr& com
             }
         }
 
+        case eCMD_SOURCE: {
+            if(command.size()<3) {
+                Signal_Error(SE_ARITY_MISMATCH, command);
+                throw syntax_except;
+            }
+
+            std::string filename = command.at(1);
+            if(filename==CONSOLE_FLAG) {
+                // Already using console, not allowed
+                if(is_console_stack->back()) {
+                    Signal_Error(IOE_ALREADY_IN_CIN, filename);
+                    Cleanup_If_Exception_Thrown(reverted_ast_depth);
+                    return INVALID_COMMAND_RETURN_CODE;
+                }
+
+                is_console_stack->push_back(true);
+                tokenizer->source = &std::cin;
+                break;
+            }
+            
+            std::istream* is_ptr = new std::ifstream(filename);
+            if(!is_ptr->good()) {
+                delete is_ptr;
+                Signal_Error(IOE_FILE_NOT_EXISTS, filename);
+                Cleanup_If_Exception_Thrown(reverted_ast_depth);
+                return INVALID_COMMAND_RETURN_CODE;
+            }
+
+            if(command.at(2)!=FORCE_FLAG) {
+                if(!sourced_history->insert(filename).second) {
+                    // Already sourced
+                    break;
+                }
+            }
+
+            is_console_stack->push_back(false);
+            input_stream_stack->push_back(is_ptr);
+            tokenizer->source = is_ptr;
+
+            break;
+        }
+
+        case eCMD_EXEC: {
+            system(Handle_Val(command.at(1)).c_str());
+            break;
+        }
+
         case eCMD_INFO: {
             std::string info_item = command.at(1);
             if(info_item==INFO_NAME) {
@@ -2154,6 +2401,15 @@ int hjbase::HUAJISCRIPTBASE::Huaji_Command_Interpreter(const const_itVecStr& com
                     ptr_it!=object_stack->end();++ptr_it) {
                     std::cout<<*ptr_it<<std::endl;
                 }
+            }
+            else if(info_item==INFO_ISTREAM_POOL) {
+                Print_Internal_Pointer_Map(istream_pool);
+            }
+            else if(info_item==INFO_OSTREAM_POOL) {
+                Print_Internal_Pointer_Map(ostream_pool);
+            }
+            else if(info_item==INFO_ARRAY_POOL) {
+                Print_Internal_Pointer_Map(array_pool);
             }
             else {
                 More_On_Info_Level_1(command);
@@ -2225,6 +2481,23 @@ int hjbase::HUAJISCRIPTBASE::Huaji_Command_Interpreter(const const_itVecStr& com
             break;
         }
 
+        case eCMD_ARRAY: {
+            if(command.size()<4) {
+                Signal_Error(SE_REQUIRE_MORE_TOKENS, command);
+                Cleanup_If_Exception_Thrown(reverted_ast_depth);
+                return INVALID_COMMAND_RETURN_CODE;
+            }
+
+            try {
+                Array_Processing_Helper(command);
+            }
+            catch (const HUAJIBASE_EXCEPTION& e) {
+                Cleanup_If_Exception_Thrown(reverted_ast_depth);
+                return INVALID_COMMAND_RETURN_CODE;
+            }
+            break;
+        }
+
         case eEVALUATE: {
             const_itVecStr expr = const_itVecStr(command.begin(),command.end()-1);
             try {
@@ -2239,6 +2512,7 @@ int hjbase::HUAJISCRIPTBASE::Huaji_Command_Interpreter(const const_itVecStr& com
 
         default: {
             Signal_Error(IE_UNDEFINED_NAME, command);
+            Cleanup_If_Exception_Thrown(reverted_ast_depth);
             return UNKNOWN_COMMAND_RETURN_CODE;
         }
 
@@ -2250,6 +2524,109 @@ int hjbase::HUAJISCRIPTBASE::Huaji_Command_Interpreter(const const_itVecStr& com
 
 std::pair<int,bool> hjbase::HUAJISCRIPTBASE::More_On_Command_Level_1(const const_itVecStr& command) {
     return std::pair<int, bool>(-1, false);
+}
+
+void hjbase::HUAJISCRIPTBASE::Array_Processing_Helper(const const_itVecStr& iVstr) {
+
+    std::string flag = iVstr.at(1);
+    std::string array_ptrStr = iVstr.at(2);
+    std::vector<std::string>::const_iterator cur_it = iVstr.begin()+3;
+    std::pair<std::vector<std::string>::const_iterator, std::vector<std::string>::const_iterator> expr_it_pair;
+
+    if(array_ptrStr==EXPR_START) {
+        expr_it_pair = Get_Expr_Position_Iterators(iVstr);
+            
+        const_itVecStr expr = const_itVecStr(expr_it_pair.first, expr_it_pair.second);
+        array_ptrStr = Evaluate_Expression(expr);
+        cur_it = expr_it_pair.second;
+    }
+    else {
+        array_ptrStr = Handle_Val(array_ptrStr);
+    }
+
+    std::vector<std::string>* array_ptr = Get_Array_Object(array_ptrStr);
+
+    if(!array_ptr) {
+        Signal_Error(IE_INTERNAL_QUERY_FAILED, iVstr);
+        throw huaji_except;
+    }
+    // array_ptr initialization complete
+
+    if(flag==POP_BACK_FLAG) {
+        if(!array_ptr->size()) {
+            Signal_Error(NE_OUT_OF_RANGE, array_ptrStr);
+            throw eval_except;
+        }
+        GC_Delete_Record(array_ptrStr, array_ptr->back());
+        array_ptr->pop_back();
+        return;
+    }
+
+    std::string arg1 = *cur_it;
+    if(arg1==EXPR_START) {
+        expr_it_pair = Get_Expr_Position_Iterators(const_itVecStr(cur_it, iVstr.end()));
+        const_itVecStr expr = const_itVecStr(expr_it_pair.first, expr_it_pair.second);
+        arg1 = Evaluate_Expression(expr);
+        cur_it = expr_it_pair.second;
+    }
+    else {
+        arg1 = Handle_Val(arg1);
+        ++cur_it;
+    }
+    // arg1 initialization complete
+
+    if(flag==PUSH_BACK_FLAG) {
+        array_ptr->push_back(arg1);
+        GC_New_Record(array_ptrStr, arg1);
+        return;
+    }
+
+    // After above operation, later arg1 will be used to refer array postion
+    std::vector<std::string>::const_iterator pos_it;
+    int pos;
+    try {
+        pos = std::stoi(arg1);
+    }
+    catch (const std::logic_error& le) {
+        Signal_Error(NE_CONVERSION_FAILED, arg1);
+        throw eval_except;
+    }
+    pos_it = array_ptr->begin()+pos;
+    if(pos_it>=array_ptr->end()) {
+        Signal_Error(NE_OUT_OF_RANGE, arg1);
+        throw eval_except;
+    }
+    // pos_it, pos initialization complete
+
+    if(flag==ERASE_FLAG) {
+        GC_Delete_Record(array_ptrStr, *pos_it);
+        array_ptr->erase(pos_it);
+        return;
+    }
+
+    std::string arg2 = *cur_it;
+    if(arg2==EXPR_START) {
+        expr_it_pair = Get_Expr_Position_Iterators(const_itVecStr(cur_it, iVstr.end()));
+        const_itVecStr expr = const_itVecStr(expr_it_pair.first, expr_it_pair.second);
+        arg2 = Evaluate_Expression(expr);
+    }
+    else {
+        arg2 = Handle_Val(arg2);
+    }
+    // arg2 initialization complete
+
+    if(flag==INSERT_FLAG) {
+        array_ptr->insert(pos_it, arg2);
+        GC_New_Record(array_ptrStr, arg2);
+        return;
+    }
+
+    if(flag==MUTATE_FLAG) {
+        GC_Delete_Record(array_ptrStr, *pos_it);
+        (*array_ptr)[pos] = arg2;
+        GC_New_Record(array_ptrStr, arg2);
+    }
+    return;
 }
 
 std::string hjbase::HUAJISCRIPTBASE::Evaluate_Expression(const const_itVecStr& expr) {
@@ -2818,6 +3195,9 @@ hjbase::HUAJISCRIPTBASE::Builtin_Function(const std::string& op, int op_key, con
                         std::string to_be_sliced = vals.at(0);
                         // get slice starting position
                         int slice_start = std::stoi(vals.at(1));
+                        if(slice_start<0) {
+                            slice_start = to_be_sliced.size()+slice_start;
+                        }
                         // three arguments indicate an ending position also provided
                         if(vals_size==3) {
                             int slice_end = std::stoi(vals.at(2));
@@ -2825,7 +3205,7 @@ hjbase::HUAJISCRIPTBASE::Builtin_Function(const std::string& op, int op_key, con
                                 slice_end = to_be_sliced.size()+slice_end+1;
                             }
                             int slice_length = slice_end-slice_start;
-                            if(slice_length<=0) {
+                            if(slice_length<0) {
                                 Signal_Error(SLE_OUT_OF_RANGE, vals);
                                 throw eval_except;
                             }
@@ -2876,11 +3256,6 @@ hjbase::HUAJISCRIPTBASE::Builtin_Function(const std::string& op, int op_key, con
                     std::string this_list = vals.at(0);
                     std::pair<int, int> first_elem_pos = Get_First_Element_Pos(this_list);
                     ret_elem = this_list.substr(first_elem_pos.first, first_elem_pos.second);
-                    if(Quotation_Rquired_For_List_Elem(ret_elem)) {
-                        ret_elem.insert(ret_elem.begin(), QUOTATION_MARK);
-                        ret_elem.push_back(QUOTATION_MARK);
-                        return ret_elem;
-                    }
                     return ret_elem;
                 }
                 else if(vals_size>1) {
@@ -2888,14 +3263,7 @@ hjbase::HUAJISCRIPTBASE::Builtin_Function(const std::string& op, int op_key, con
                     for(std::vector<std::string>::const_iterator it=vals.begin();it<vals.end();++it) {
                         std::pair<int, int> first_elem_pos = Get_First_Element_Pos(*it);
                         std::string to_append = (*it).substr(first_elem_pos.first, first_elem_pos.second);
-                        if(Quotation_Rquired_For_List_Elem(to_append)) {
-                            ret_list.push_back(QUOTATION_MARK);
-                            ret_list.append(to_append);
-                            ret_list.push_back(QUOTATION_MARK);
-                        }
-                        else {
-                            ret_list.append(to_append);
-                        }
+                        ret_list.append(to_append);
                         ret_list.push_back(' ');
                     }
                     ret_list[ret_list.size()-1] = cEXPR_END;
@@ -2980,7 +3348,6 @@ hjbase::HUAJISCRIPTBASE::Builtin_Function(const std::string& op, int op_key, con
                     Signal_Error(SE_ARITY_MISMATCH, op);
                     throw syntax_except;
                 }
-                Side_Effects_Guard(FUNC_GETRET);
                 return temp_return_val;
             }
             case eFUNC_STACK_POS: {
@@ -3056,6 +3423,184 @@ hjbase::HUAJISCRIPTBASE::Builtin_Function(const std::string& op, int op_key, con
                     Signal_Error(IE_INTERNAL_QUERY_FAILED, vals.at(0));
                     throw eval_except;
                 }
+            }
+            case eFUNC_IS: {
+                std::istream* is;
+                if(vals.size()<1) {
+                    is = &std::cin;
+                    // Here insertion might fail if user used cin before, but that's ok
+                    istream_pool->insert(std::pair<std::string, std::istream*>(CIN_PTRSTR, is));
+                    return CIN_PTRSTR;
+                }
+                else {
+                    is = new std::ifstream(vals.at(0));                    
+                    if(!is->good()) {
+                        delete is;
+                        Signal_Error(IOE_FILE_NOT_EXISTS, vals.at(0));
+                        throw eval_except;
+                    }
+                }
+                
+                std::string is_ptrStr = ISTREAM_TAG + Convert_Ptr_To_Str(is) + vals.at(0);
+                istream_pool->insert(std::pair<std::string, std::istream*>(is_ptrStr, is));
+
+                return is_ptrStr;
+            }
+            case eFUNC_OS: {
+                std::ostream* os;
+                if(vals.size()<1) {
+                    os = &std::cout;
+                    // Here insertion might fail if user used cin before, but that's ok
+                    ostream_pool->insert(std::pair<std::string, std::ostream*>(COUT_PTRSTR, os));
+                    return COUT_PTRSTR;
+                }
+                else {
+                    if(vals.size()>1) {
+                        if(vals.at(1)==APP_FLAG) {
+                            os = new std::ofstream(vals.at(0), std::ios_base::app);
+                        }
+                        os = new std::ofstream(vals.at(0));
+                    }
+                    else {
+                        os = new std::ofstream(vals.at(0));
+                    }
+
+                    if(!os->good()) {
+                        delete os;
+                        Signal_Error(IOE_FILE_NOT_EXISTS, vals.at(0));
+                        throw eval_except;
+                    }
+                }
+                
+                std::string os_ptrStr = OSTREAM_TAG + Convert_Ptr_To_Str(os) + vals.at(0);
+                ostream_pool->insert(std::pair<std::string, std::ostream*>(os_ptrStr, os));
+
+                return os_ptrStr;
+            }
+            case eFUNC_READ: {
+                if(vals.size()<2) {
+                    Signal_Error(SE_ARITY_MISMATCH, op);
+                    throw eval_except;
+                }
+                std::string flag = vals.at(0);
+                std::map<std::string, std::istream*>::const_iterator is_it
+                    = istream_pool->find(vals.at(1));
+            
+                if(is_it==istream_pool->end()) {
+                    Signal_Error(IE_INTERNAL_QUERY_FAILED, vals.at(1));
+                    throw huaji_except;
+                }
+
+                std::istream* is = is_it->second;
+                try {
+                    if(flag==GETCHAR_FLAG) {
+                        char cur_char = is->get();
+                        if(cur_char==std::char_traits<char>::eof()) {
+                            return EOF_TAG;
+                        }
+                        else {
+                            return std::string(1, cur_char);
+                        }
+                    }
+                    else if(flag==UNGETCHAR_FLAG) {
+                        is->unget();
+                        return EOF_TAG;
+                    }
+                    else if(flag==GETLINE_FLAG) {
+                        std::string ret_str;
+                        std::getline(*is, ret_str);
+                        return ret_str;
+                    }
+                    else if(flag==TOEND_FLAG) {
+                        char cur_char = is->get();
+                        std::string ret_str;
+                        while(cur_char!=std::char_traits<char>::eof()) {
+                            ret_str.push_back(cur_char);
+                            cur_char = is->get();
+                        }
+                        return ret_str;
+                    }
+                    else {
+                        Signal_Error(SE_UNRECOGNISED_FLAG, flag);
+                        throw eval_except;
+                    }
+                }
+                catch (std::ios_base::failure& e) {
+                    Signal_Error(IOE_IOSBASE_FAILURE, vals.at(1));
+                    throw eval_except;
+                }
+            }
+            case eFUNC_WRITE: {
+                if(vals.size()<1) {
+                    Signal_Error(SE_ARITY_MISMATCH, op);
+                    throw eval_except;
+                }                
+                
+                std::map<std::string, std::ostream*>::const_iterator os_it
+                    = ostream_pool->find(vals.at(0));
+            
+                if(os_it==ostream_pool->end()) {
+                    Signal_Error(IE_INTERNAL_QUERY_FAILED, vals.at(0));
+                    throw huaji_except;
+                }
+
+                std::ostream* os = os_it->second;
+
+                try {
+                    for(std::vector<std::string>::const_iterator val_it=vals.begin()+1;val_it!=vals.end();++val_it) {
+                        (*os)<<(*val_it);
+                    }
+                }
+                catch (std::ios_base::failure& e) {
+                    Signal_Error(IOE_IOSBASE_FAILURE, vals.at(1));
+                    throw eval_except;
+                }
+                return EOF_TAG;
+            }
+            case eFUNC_ARRAY_NEW: {
+                std::vector<std::string>* array_ptr = new std::vector<std::string>;
+                std::string array_ptrStr = ARRAY_TAG + Convert_Ptr_To_Str(array_ptr);
+                // Assume array_ptr is unique, so we don't do check here
+                array_pool->insert(std::pair<std::string, std::vector<std::string>*>(array_ptrStr, array_ptr));
+                return array_ptrStr;
+            }
+            case eFUNC_ARRAY_REF: {
+                if(vals.size()<2) {
+                    Signal_Error(SE_ARITY_MISMATCH, op);
+                    throw eval_except;
+                }
+
+                std::vector<std::string>* array_ptr = Get_Array_Object(vals.at(0));
+                if(!array_ptr) {
+                    Signal_Error(IE_INTERNAL_QUERY_FAILED, vals.at(0));
+                    throw eval_except;
+                }
+
+                int ref_pos;
+                try {
+                    ref_pos = std::stoi(vals.at(1));
+                }
+                catch (const std::logic_error& le) {
+                    Signal_Error(NE_CONVERSION_FAILED, vals.at(1));
+                    throw eval_except;
+                }
+
+                if(ref_pos>=array_ptr->size()) {
+                    Signal_Error(NE_OUT_OF_RANGE, vals.at(1));
+                    throw eval_except;
+                }
+
+                return array_ptr->at(ref_pos);
+            }
+            case eFUNC_ARRAY_SIZE: {
+                if(vals.size()!=1) {
+                    Signal_Error(SE_ARITY_MISMATCH, op);
+                    throw syntax_except;
+                }
+
+                std::vector<std::string>* array_ptr = Get_Array_Object(vals.at(0));
+
+                return std::to_string(array_ptr->size());
             }
             default: {
                 Signal_Error(IE_UNKNOWN, op);
@@ -3172,19 +3717,25 @@ std::string hjbase::HUAJISCRIPTBASE::Handle_Val(const std::string& name_or_val) 
                 }
             }        
             else if(Starts_With(name_or_val, LIST_TAG)) {
-                return name_or_val.substr(LIST_TAG_SIZE,std::string::npos);
+                return name_or_val.substr(LIST_TAG_SIZE, std::string::npos);
+            }
+            else if(Starts_With(name_or_val, FLAG_TAG)) {
+                return name_or_val;
             }
         }
         return name_or_val;
     }
     else {
         if(Starts_With(name_or_val, STRING_TAG)) {
-            return name_or_val.substr(STRING_TAG_SIZE,std::string::npos);
+            return name_or_val.substr(STRING_TAG_SIZE, std::string::npos);
         }
         else if(Starts_With(name_or_val, LIST_TAG)) {
-            return name_or_val.substr(LIST_TAG_SIZE,std::string::npos);
+            return name_or_val.substr(LIST_TAG_SIZE, std::string::npos);
         }
         else if(Is_Numerical(name_or_val)) {
+            return name_or_val;
+        }            
+        else if(Starts_With(name_or_val, FLAG_TAG)) {
             return name_or_val;
         }
         else {

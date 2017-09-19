@@ -1,4 +1,22 @@
-config debug on;
+/*
+    Basic standard library
+    Provide
+        - namespace std
+            - function true
+            - function false
+            - function if
+
+            - function cons
+            - function first
+            - function rest
+            - function empty
+            - function empty?
+
+            - function make-lazy
+            
+            - console input object cin
+            - console output object cout
+*/
 
 init std;
 
@@ -14,6 +32,27 @@ declare if@std = (lambda --lazy (b t f) (
     (lazy b) t f
 ));
 
+declare cons@std = (lambda (f r) (
+    lambda (b) (b f r)
+));
+
+declare first@std = (lambda (lst) (
+    lst true@std
+));
+
+declare rest@std = (lambda (lst) (
+    lst false@std
+));
+
+declare empty@std = (lambda (lst) (
+    true@std
+));
+
+declare empty?@std = (lambda (lst) (
+    lst (lambda (f r) false@std)
+));
+
 define --lazy (make-lazy@std expr) expr;
 
-print --expr (true@std (make-lazy@std 1) (make-lazy@std (/ 1 0)));
+declare cin@std = (input);
+declare cout@std = (output);

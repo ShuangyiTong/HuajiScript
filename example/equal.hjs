@@ -2,3 +2,6 @@ declare i;
 if(= i "NONE") {
     print "yes";
 }
+else {
+    print "no";
+}

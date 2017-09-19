@@ -1,0 +1,8 @@
+/*
+    In this example, error will signal if compile with 
+    #define SIGNAL_UNABLE_TO_DELETE
+*/
+
+define (test f) "nothing";
+
+(test "#:func1231242");

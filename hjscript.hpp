@@ -9,6 +9,7 @@
 #include <fstream>
 #include <cstdlib>
 #include <map>
+#include <set>
 #include <utility>
 #include <queue>
 
@@ -17,6 +18,11 @@
     Enable this will let itVecStr constructor check if iterator range is valid
 */
 #define itVecStr_RANGE_SAFETY_CHECK
+
+/*
+    Check example/gc_error.hjs to see what will happen if using this directive
+*/
+// #define SIGNAL_UNABLE_TO_DELETE
 
 /*  
     class with const pointer based on std::vector<std::string>, 
@@ -127,7 +133,7 @@ namespace hjbase {
             const std::string OP_MINUS = "-";
             const std::string OP_MULTIPLY = "*";
             const std::string OP_DIVISION = "/";
-            const std::string OP_MOD = "%%";
+            const std::string OP_MOD = "mod";
             const std::string OP_LE = "<=";
             const std::string OP_GE = ">=";
             const std::string OP_LT = "<";
@@ -177,6 +183,13 @@ namespace hjbase {
             const std::string FUNC_INIT = "init";
             const std::string FUNC_MEMVAR = "mem-ref";
             const std::string FUNC_LAZY = "lazy";
+            const std::string FUNC_IS = "input";
+            const std::string FUNC_OS = "output";
+            const std::string FUNC_READ = "read";
+            const std::string FUNC_WRITE = "write";
+            const std::string FUNC_ARRAY_NEW = "array-new";
+            const std::string FUNC_ARRAY_REF = "array-ref";
+            const std::string FUNC_ARRAY_SIZE = "array-size";
 
             enum {
                 eFUNC_AND,
@@ -199,6 +212,13 @@ namespace hjbase {
                 eFUNC_MEMVAR,
                 eFUNC_MEMFUNC,
                 eFUNC_LAZY,
+                eFUNC_IS,
+                eFUNC_OS,
+                eFUNC_READ,
+                eFUNC_WRITE,
+                eFUNC_ARRAY_NEW,
+                eFUNC_ARRAY_REF,
+                eFUNC_ARRAY_SIZE,
             };
 
             const std::map<std::string, int> BUILTIN_FUNCTIONS = {
@@ -221,6 +241,13 @@ namespace hjbase {
                 { FUNC_INIT, eFUNC_INIT },
                 { FUNC_MEMVAR, eFUNC_MEMVAR },
                 { FUNC_LAZY, eFUNC_LAZY },
+                { FUNC_IS, eFUNC_IS },
+                { FUNC_OS, eFUNC_OS },
+                { FUNC_READ, eFUNC_READ },
+                { FUNC_WRITE, eFUNC_WRITE },
+                { FUNC_ARRAY_NEW, eFUNC_ARRAY_NEW },
+                { FUNC_ARRAY_REF, eFUNC_ARRAY_REF },
+                { FUNC_ARRAY_SIZE, eFUNC_ARRAY_SIZE },
             };
         }
         namespace commands_names {
@@ -229,11 +256,16 @@ namespace hjbase {
             const std::string CMD_NAME_MUTATE_TO = "to";
             const std::string CMD_PRINT = "print";
             const std::string CMD_IF = "if";
+            const std::string CMD_ELSE = "else";
+            const std::string CMD_ELIF = "elif";
             const std::string CMD_WHILE = "while";
             const std::string CMD_DEFINE = "define";
             const std::string CMD_INIT = "init";
             const std::string CMD_DELETE = "delete";
             const std::string CMD_RETURN = "return";
+            const std::string CMD_SOURCE = "source";
+            const std::string CMD_EXEC = "exec";
+            const std::string CMD_ARRAY = "array";
 
             const std::string CMD_CONFIG = "config";
             const std::string CONFIG_DEBUG = "debug";
@@ -249,7 +281,10 @@ namespace hjbase {
             const std::string INFO_NAMESPACE_POOL = "namespace_pool";
             const std::string INFO_OBJECT_POOL = "object_pool";
             const std::string INFO_OBJECT_STACK = "object_stack";
-            const std::string INFO_LAZY_POOL = "lazy";
+            const std::string INFO_LAZY_POOL = "lazy_pool";
+            const std::string INFO_ISTREAM_POOL = "istream_pool";
+            const std::string INFO_OSTREAM_POOL = "ostream_pool";
+            const std::string INFO_ARRAY_POOL = "array_pool";
 
             const std::string EVALUATE = "(";
 
@@ -258,11 +293,16 @@ namespace hjbase {
                 eCMD_NAME_MUTATE,
                 eCMD_PRINT,
                 eCMD_IF,
+                eCMD_ELSE,
+                eCMD_ELIF,
                 eCMD_WHILE,
                 eCMD_DEFINE,
                 eCMD_INIT,
                 eCMD_DELETE,
                 eCMD_RETURN,
+                eCMD_SOURCE,
+                eCMD_EXEC,
+                eCMD_ARRAY,
                 eCMD_CONFIG,
                 eCMD_INFO,
                 eEVALUATE,
@@ -273,11 +313,16 @@ namespace hjbase {
                 { CMD_NAME_MUTATE, eCMD_NAME_MUTATE },
                 { CMD_PRINT, eCMD_PRINT },
                 { CMD_IF, eCMD_IF },
+                { CMD_ELSE, eCMD_ELSE },
+                { CMD_ELIF, eCMD_ELIF },
                 { CMD_WHILE, eCMD_WHILE },
                 { CMD_DEFINE, eCMD_DEFINE },
                 { CMD_INIT, eCMD_INIT },
                 { CMD_DELETE, eCMD_DELETE },
                 { CMD_RETURN, eCMD_RETURN },
+                { CMD_SOURCE, eCMD_SOURCE },
+                { CMD_ARRAY, eCMD_ARRAY },
+                { CMD_EXEC, eCMD_EXEC },
                 { CMD_CONFIG, eCMD_CONFIG },
                 { CMD_INFO, eCMD_INFO },
                 { EVALUATE, eEVALUATE },
@@ -298,6 +343,10 @@ namespace hjbase {
             const std::string IE_INTERNAL_QUERY_FAILED = "Internal Error: Internal query failed";
             const std::string IE_ACCESSING_UNDEFINED_STACK_FRAME = "Internal Error: Accessing undefined stack frame";
             const std::string IE_NOT_DELETABLE = "Internal Error: Unable to delete";
+
+            const std::string IOE_FILE_NOT_EXISTS = "IO Error: File not exist, or unable to open";
+            const std::string IOE_IOSBASE_FAILURE = "IO Error: ios_base failure";
+            const std::string IOE_ALREADY_IN_CIN = "IO Error: Cannot source console input when using console input";
 
             const std::string NE_CONVERSION_FAILED = "Numerical Exception: Unable to convert to numerical value";
             const std::string NE_OUT_OF_RANGE = "Numerical Exception: Numerical value out of range";
@@ -332,33 +381,6 @@ namespace hjbase {
             const std::string DEB_TEST_RES_EXPECTED = "Expected - ";
             const std::string DEB_TEST_RES_OUTPUT = "Output - ";
         }
-        namespace miscellaneous {
-            const std::string NAME_THEADER = "Name";
-            const std::string VAL_THEADER = "Val";
-            const std::string HORIZONTAL_LINE = "--------------------";
-            const std::string VERTICAL_LINE_WITH_SPACE_AFTER = "|  ";
-            const std::string VERTICAL_LINE_WITH_SPACE_BOTH = "  |  ";
-            const std::string VERTICAL_LINE_WITH_SPACE_BEFORE = "  |";
-
-            const std::string BOOL_TRUE = "1";
-            const std::string BOOL_FALSE = "0";
-
-            const std::string CONSOLE_INFO_STRING = "Huaji Script Interpreter v1.061";
-            const std::string COMMAND_LINE_PROMPT = "OvO >>> ";
-
-            const std::string UNDEFINED_NAME = "__undefined__";
-            const std::string TEMP_RET_VAL_NAME = "temp&ret";
-            const std::string OBJECT_SCOPE_REF = "self";
-
-            const std::string NONEWLINE = "--nonl";
-            const std::string USE_EXPR_FROM_HERE = "--expr";
-            const std::string OVERLOADING_FLAG = "--overload";
-            const std::string LAZY_FLAG = "--lazy";
-            const std::string STACK_FLAG = "--stack";
-            const std::string NAMESPACE_FLAG = "--namespace";
-            const std::string SIZE_FLAG = "--size";
-            const std::string DETAIL_FLAG = "--detail";
-        }
         namespace type_tag {
             const std::string STRING_TAG = "#:string";
             const int STRING_TAG_SIZE = 8;
@@ -367,12 +389,21 @@ namespace hjbase {
             const std::string FUNC_TAG = "#:func";
             const std::string OBJECT_TAG = "#:object";
             const std::string LAZY_TAG = "#:lazy";
+            const std::string ISTREAM_TAG = "#:istream";
+            const std::string OSTREAM_TAG = "#:ostream";
+            const std::string ARRAY_TAG = "#:array";
+            const std::string RBT_TAG = "#:RBt";
+            const std::string EOF_TAG = "#:eof";
             const std::string UNDEFINED_TYPE = "#:undefined";
+            const std::string FLAG_TAG = "--";
 
             enum {
                 FUNC_TAG_CODE,
                 OBJECT_TAG_CODE,
                 LAZY_TAG_CODE,
+                ISTREAM_TAG_CODE,
+                OSTREAM_TAG_CODE,
+                ARRAY_TAG_CODE,
             };
 
             /*
@@ -385,7 +416,59 @@ namespace hjbase {
                 { FUNC_TAG, FUNC_TAG_CODE },
                 { OBJECT_TAG, OBJECT_TAG_CODE },
                 { LAZY_TAG, LAZY_TAG_CODE },
+                { ISTREAM_TAG, ISTREAM_TAG_CODE },
+                { OSTREAM_TAG, OSTREAM_TAG_CODE },
+                { ARRAY_TAG, ARRAY_TAG_CODE },
             };
+        }
+        namespace miscellaneous {
+            const std::string NAME_THEADER = "Name";
+            const std::string VAL_THEADER = "Val";
+            const std::string HORIZONTAL_LINE = "--------------------";
+            const std::string VERTICAL_LINE_WITH_SPACE_AFTER = "|  ";
+            const std::string VERTICAL_LINE_WITH_SPACE_BOTH = "  |  ";
+            const std::string VERTICAL_LINE_WITH_SPACE_BEFORE = "  |";
+
+            const std::string EMPTY_STRING_OBJECT = std::string();
+
+            const std::string BOOL_TRUE = "1";
+            const std::string BOOL_FALSE = "0";
+
+            const std::string CONSOLE_INFO_STRING = "Huaji Script Interpreter v1.062";
+            const std::string COMMAND_LINE_PROMPT = "OvO >>> ";
+
+            const std::string UNDEFINED_NAME = "__undefined__";
+            const std::string TEMP_RET_VAL_NAME = "temp&ret";
+            const std::string OBJECT_SCOPE_REF = "self";
+
+            // Used in CMD_PRINT
+            const std::string NONEWLINE = "--nonl";
+            const std::string USE_EXPR_FROM_HERE = "--expr";
+            // Used in CMD_DEFINE and FUNC_LAMBDA
+            const std::string OVERLOADING_FLAG = "--overload";
+            const std::string LAZY_FLAG = "--lazy";
+            // Used in CMD_INFO
+            const std::string STACK_FLAG = "--stack";
+            const std::string NAMESPACE_FLAG = "--namespace";
+            // Used in CMD_SOURCE
+            const std::string FORCE_FLAG = "--force";
+            const std::string CONSOLE_FLAG = "console";
+            // Used in FUNC_OS
+            const std::string APP_FLAG = "--append";
+            // Used in FUNC_READ
+            const std::string GETCHAR_FLAG = "--getchar";
+            const std::string UNGETCHAR_FLAG = "--unget";
+            const std::string GETLINE_FLAG = "--getline";
+            const std::string TOEND_FLAG = "--to-end";
+            // Used in CMD_ARRAY
+            const std::string MUTATE_FLAG = "mutate";
+            const std::string ERASE_FLAG = "erase";
+            const std::string PUSH_BACK_FLAG = "push_back";
+            const std::string POP_BACK_FLAG = "pop_back";
+            const std::string INSERT_FLAG = "insert";
+            
+            const std::string CIN_PTRSTR = "#:consolein";
+            const std::string COUT_PTRSTR = "#:consoleout";
         }
     }
 
@@ -460,20 +543,17 @@ namespace hjbase {
     class HUAJITOKENIZER {
         public:
 
-            HUAJITOKENIZER(std::string& file_name);
             HUAJITOKENIZER();
             ~HUAJITOKENIZER();
 
             std::string Get_One_Token();
             bool enable_raw_string;
+            std::istream* source;
         
         private:
-            
-            void Constructor_Helper();
-            std::istream *source;
-            std::queue<std::string> *token_queue;
+            std::queue<std::string>* token_queue;
             int list_depth;
-            bool is_cin, is_in_quotation, is_in_block_comment, is_in_line_comment,
+            bool is_in_quotation, is_in_block_comment, is_in_line_comment,
             is_in_nosubst, is_in_square_bracket, is_in_list;
             class LISTFORMATTER* lst_formatter;
     };
@@ -503,7 +583,6 @@ namespace hjbase {
 
         public:
 
-            HUAJISCRIPTBASE(std::string file_name);
             HUAJISCRIPTBASE();
             /*
                 Destructor
@@ -513,7 +592,7 @@ namespace hjbase {
             */
             ~HUAJISCRIPTBASE();
 
-            void Entry_Point();
+            void Entry_Point(std::string filename=cnt::miscellaneous::EMPTY_STRING_OBJECT);
 
         protected:
 
@@ -557,13 +636,15 @@ namespace hjbase {
             void Side_Effects_Guard(std::string func_name_with_side_effects=cnt::miscellaneous::UNDEFINED_NAME);
 
             int Get_Stack_Frame_Pos(const std::string& req_str);
+
+            std::vector<std::string>* Get_Array_Object(const std::string& arrat_ptrStr);
         
         private:
-            
-            void Constructor_Helper();
 
             int FUNC_Paring_Helper(std::map<std::string, std::string>* stack_map, std::list<std::string>* arg_names, const const_itVecStr& iVstr,
                                    std::vector<std::string>::const_iterator& func_def_begin, std::vector<std::string>::const_iterator& func_def_end);
+
+            void Array_Processing_Helper(const const_itVecStr& iVstr);
 
             std::pair<std::string*, std::map<std::string, std::string>*> Resolve_Namespace(const std::string& name);
         
@@ -624,6 +705,12 @@ namespace hjbase {
 
             void Delete_Lazy_Object(const std::string& lazy_ptrStr);
 
+            void Delete_IS_Object(const std::string& is_ptrStr);
+
+            void Delete_OS_Object(const std::string& os_ptrStr);
+
+            void Delete_Array_Object(const std::string& array_ptrStr);
+
             void Delete_Internal_Object(const std::string& ref_val, int type_code=-1);
 
             /*
@@ -655,12 +742,24 @@ namespace hjbase {
 
             HUAJITOKENIZER* tokenizer;
 
+            std::vector<bool>* is_console_stack;
+
+            std::vector<std::istream*>* input_stream_stack;
+
+            std::set<std::string>* sourced_history;
+
+            std::map<std::string, std::istream*>* istream_pool;
+
+            std::map<std::string, std::ostream*>* ostream_pool;
+
+            std::map<std::string, std::vector<std::string>*>* array_pool;
+
             /*
                 collect_status is used by Collect_Tokens to identify if a command is complete
                 collect_length is used by Take_One_Token to understand how many tokens it had accepted.
             */
             int collect_status, collect_length, current_ast_depth;
 
-            bool enable_float_point, enable_debug_mode, enable_raw_string, is_console, allow_side_effects, enable_gc;
+            bool enable_float_point, enable_debug_mode, enable_raw_string, allow_side_effects, enable_gc, last_if_cond;
     };
 }

@@ -1,0 +1,39 @@
+/*
+    Standard string library
+    Provide
+        - namespace string@std
+            - function fr: find and replace
+*/
+
+init string@std;
+
+define fr@string@std(text, str1, str2) {
+    declare text_len = (strlen text);
+    declare str1_len = (strlen str1);
+    declare str2_len = (strlen str2);
+    if(< text_len str1_len) {
+        return text;
+    }
+
+    // slow implementation, check if match one by one
+    declare start_pos=0, end_pos=str1_len, res_str="";
+    declare text_substr = text[start_pos:end_pos];
+    while(<= end_pos text_len) {
+        if(= text_substr str1) {
+            // add the whole str2 to res_str back
+            mutate res_str to (strapp res_str str2);
+            // move forword str1_len char forword
+            mutate start_pos to (+ start_pos str1_len);
+            mutate end_pos to (+ end_pos str1_len);
+        }
+        else {
+            // add one char to res_str back
+            mutate res_str to (strapp res_str text_substr[0:1]);
+            // move forword 1 char
+            mutate start_pos to (+ start_pos 1);
+            mutate end_pos to (+ end_pos 1);
+        }
+        mutate text_substr to text[start_pos:end_pos];
+    }
+    return (strapp res_str text[start_pos:text_len]);
+}

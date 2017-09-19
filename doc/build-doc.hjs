@@ -1,0 +1,30 @@
+source lib/std;
+source lib/string;
+
+print "Generating htmls using Scribble...";
+exec "scribble --dest doc/ --htmls doc/huaji.scrbl";
+
+define fr-file(file_name, str1, str2) {
+    print "replacing string \"" str1 "\" with \"" str2 "\" in " file_name "...";
+    declare file_in=(input file_name);
+    declare file_data=(read --to-end file_in);
+
+    declare file_out=(output file_name);
+    (write file_out (fr@string@std file_data str1 str2));
+}
+
+define fr-filebatch(file_name_list, str1, str2) {
+    if(= file_name_list `()) {
+        return "void";
+    }
+    else {
+        fr-file&0((first file_name_list), str1, str2);
+        fr-filebatch&0((rest file_name_list), str1, str2);
+    }
+}
+
+declare file_name_lst=`(doc/huaji/index.html doc/huaji/basics.html doc/huaji/function.html doc/huaji/data-struct.html doc/huaji/oop-scope.html);
+
+fr-filebatch(file_name_lst, "6.9", "1.062");
+
+print "Complete.";

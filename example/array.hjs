@@ -1,0 +1,10 @@
+declare array=(array-new);
+array push_back array 10;
+print --expr (array-ref array 0);
+array insert array 0 7;
+print --expr (array-ref array 0);
+array mutate array 0 5;
+print --expr (array-ref array 0);
+print --expr (array-size array);
+array pop_back array;
+print --expr (array-size array); 

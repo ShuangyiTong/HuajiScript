@@ -600,7 +600,7 @@ namespace hjbase {
 
             std::pair<int, bool> More_On_Builtin_Function_Search_Level_1(const std::string& op);
 
-            std::string More_On_Builtin_Function(const std::string& op, int op_key, const const_itVecStr& vals);
+            std::string More_On_Builtin_Function_Level_1(const std::string& op, int op_key, const const_itVecStr& vals);
 
             std::pair<std::string, bool> More_On_Names_Query_Level_1(const std::string& name);
 

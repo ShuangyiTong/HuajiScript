@@ -2,3 +2,4 @@ huaji
 .vscode/*
 huaji.exe
 *.s
+*.o

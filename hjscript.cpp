@@ -2872,7 +2872,7 @@ std::string hjbase::HUAJISCRIPTBASE::Evaluate_Expression(const const_itVecStr& e
                     ans_val = Builtin_Function(op, op_key, vals);
                 }
                 else if(is_more_func) {
-                    ans_val = More_On_Builtin_Function(op, op_key, vals);
+                    ans_val = More_On_Builtin_Function_Level_1(op, op_key, vals);
                 }
                 else {
                     ans_val = Apply_Function(func_ptr, vals);
@@ -3633,7 +3633,7 @@ hjbase::HUAJISCRIPTBASE::More_On_Builtin_Function_Search_Level_1(const std::stri
     return std::pair<int, bool>(-1, false);
 }
 
-std::string hjbase::HUAJISCRIPTBASE::More_On_Builtin_Function(const std::string& op, int op_key, const const_itVecStr& vals) {
+std::string hjbase::HUAJISCRIPTBASE::More_On_Builtin_Function_Level_1(const std::string& op, int op_key, const const_itVecStr& vals) {
     throw huaji_except;
 }
 
